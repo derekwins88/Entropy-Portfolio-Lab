@@ -1,57 +1,30 @@
 name: docs-diagrams
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
 
 jobs:
   render:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Install Chromium runtime deps (for Puppeteer)
+
+      # Install Playwright and its system deps for Chromium (one and done)
+      - name: Install Playwright + deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libasound2t64 \
-            libatk1.0-0 \
-            libatk-bridge2.0-0 \
-            libcups2 \
-            libdrm2 \
-            libgbm1 \
-            libgtk-3-0 \
-            libnspr4 \
-            libnss3 \
-            libx11-xcb1 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxfixes3 \
-            libxrandr2 \
-            xdg-utils
-      - name: Install mermaid-cli
-        run: npm i -g @mermaid-js/mermaid-cli@10.9.0
+          npm -g i playwright@1.47.2
+          npx playwright install --with-deps chromium
+
       - name: Render Mermaid blocks from docs/system_diagram.md
-        shell: bash
         run: |
-          set -euo pipefail
-          IN=docs/system_diagram.md
-          OUTDIR=docs-diagrams/out
-          CFG=docs-diagrams/puppeteer.json
-          mkdir -p "$OUTDIR"
-          i=0
-          # extract fenced ```mermaid blocks
-          awk '/^```mermaid/{flag=1; next} /^```/{flag=0} flag{print}' "$IN" \
-          | awk 'BEGIN{b=0} /^ *$/{next} {print} END{}' \
-          | csplit -s -f "$OUTDIR/block-" -b "%02d.mmd" - '/^$/+1' '{*}' || true
-          shopt -s nullglob
-          for f in "$OUTDIR"/block-*.mmd; do
-            png="${f%.mmd}.png"
-            # -p/--puppeteerConfigFile reads JSON
-            mmdc -i "$f" -o "$png" -p "$CFG" --backgroundColor transparent
-            echo "Rendered $png"
-          done
+          NODE_PATH=$(npm root -g) node docs-diagrams/render.mjs docs/system_diagram.md
+
       - name: Upload diagram artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mermaid-diagrams
+          name: system-diagram
           path: docs-diagrams/out/*.png
