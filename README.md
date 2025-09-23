@@ -1,3 +1,5 @@
+[![CI](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci.yml/badge.svg)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci.yml)
+
 # Entropy Portfolio Lab
 
 A unified, research-to-execution repository for **entropy-aware portfolio trading**.
@@ -146,7 +148,26 @@ pytest backtest/tests -q
 python -m backtest.cli run --csv backtest/samples/AAPL.csv \
   --strategy backtest.strategies.flat:Flat --mode target
 
+# SMA cross (target sizing)
+python -m backtest.cli run --csv backtest/samples/AAPL.csv \
+  --strategy backtest.strategies.sma:SMACross --mode target
+
+# RSI/EMA mean reversion (delta sizing with brackets)
+python -m backtest.cli run --csv backtest/samples/AAPL.csv \
+  --strategy backtest.strategies.rsi_ema:RSIEmaMeanRevert --mode delta
+
 # portfolio example (spec file)
 echo '[{"name":"AAPL","csv":"backtest/samples/AAPL.csv","strategy":"backtest.strategies.flat:Flat","params":{}}]' > port.json
 python -m backtest.cli portfolio --spec port.json --mode target
 ```
+
+**Benchmarked runs**
+
+```bash
+python -m backtest.cli run \
+  --csv backtest/samples/AAPL.csv \
+  --strategy backtest.strategies.flat:Flat \
+  --bench backtest/samples/AAPL.csv
+```
+
+Prints Alpha, Beta, Information Ratio, Up/Down Capture, and Tracking Error (because numbers are friends).

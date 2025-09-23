@@ -1,11 +1,12 @@
 """Command line interface for the backtest package."""
+
 from __future__ import annotations
 
 import argparse
 import json
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
@@ -21,6 +22,19 @@ def _load_csv(path: str) -> pd.DataFrame:
     return pd.read_csv(p, parse_dates=[0], index_col=0)
 
 
+def _load_price_series(path: str) -> pd.Series:
+    df = _load_csv(path)
+    for column in ("close", "Close", "adj_close", "Adj Close", "price", "Price"):
+        if column in df.columns:
+            series = df[column]
+            return series.astype(float)
+    if isinstance(df, pd.Series):
+        return df.astype(float)
+    if df.shape[1] == 1:
+        return df.iloc[:, 0].astype(float)
+    raise ValueError(f"Could not infer price column from benchmark file: {path}")
+
+
 def _resolve_strategy(path: str, params: Dict[str, Any]) -> Any:
     module_path, class_name = path.rsplit(":", 1)
     module = import_module(module_path)
@@ -31,7 +45,7 @@ def _resolve_strategy(path: str, params: Dict[str, Any]) -> Any:
 def cmd_run(args: argparse.Namespace) -> None:
     df = _load_csv(args.csv)
     strategy = _resolve_strategy(args.strategy, {})
-    bench = _load_csv(args.bench) if args.bench else None
+    bench: Optional[pd.Series] = _load_price_series(args.bench) if args.bench else None
     result = run_backtest(
         df,
         strategy,
@@ -86,8 +100,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_p = sub.add_parser("run", help="Run a single-strategy backtest")
     run_p.add_argument("--csv", required=True)
-    run_p.add_argument("--strategy", required=True, help="module:Class (e.g. backtest.strategies.flat:Flat)")
-    run_p.add_argument("--bench")
+    run_p.add_argument(
+        "--strategy",
+        required=True,
+        help="module:Class (e.g. backtest.strategies.flat:Flat)",
+    )
+    run_p.add_argument("--bench", help="Benchmark CSV (Close column used for metrics)")
     run_p.add_argument("--mode", choices=["delta", "target"], default="target")
     run_p.add_argument("--cash", type=float, default=100_000.0)
     run_p.add_argument("--size", type=int, default=1)
@@ -100,7 +118,11 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.set_defaults(func=cmd_run)
 
     port_p = sub.add_parser("portfolio", help="Aggregate multiple strategies")
-    port_p.add_argument("--spec", required=True, help='JSON array with {"name","csv","strategy","params"}')
+    port_p.add_argument(
+        "--spec",
+        required=True,
+        help='JSON array with {"name","csv","strategy","params"}',
+    )
     port_p.add_argument("--cash", type=float, default=100_000.0)
     port_p.add_argument("--mode", choices=["delta", "target"], default="target")
     port_p.add_argument("--size", type=int, default=1)
