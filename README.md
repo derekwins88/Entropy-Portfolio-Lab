@@ -1,11 +1,22 @@
-<!-- Badges -->
-[![python-ci](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml/badge.svg?branch=main)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml)
-[![ui](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-ui.yml/badge.svg?branch=main)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-ui.yml)
-[![docs-diagrams](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/docs-diagrams.yml/badge.svg?branch=main)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/docs-diagrams.yml)
-[![proof](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-proof.yml/badge.svg?branch=main)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-proof.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-
 # Entropy Portfolio Lab
+
+<!-- ===== Project Badges ===== -->
+[![python-ci](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml/badge.svg?branch=main)](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml)
+[![ui](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-ui.yml/badge.svg?branch=main)](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-ui.yml)
+[![proof](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-proof.yml/badge.svg?branch=main)](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-proof.yml)
+[![docs-diagrams](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/docs-diagrams.yml/badge.svg?branch=main)](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/docs-diagrams.yml)
+
+![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![Node 20](https://img.shields.io/badge/Node-20-339933?logo=node.js&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](.github/CONTRIBUTING.md)
+[![Last commit](https://img.shields.io/github/last-commit/derekwins88/Entropy-Portfolio-Lab.svg)](https://github.com/derekwins88/Entropy-Portfolio-Lab/commits/main)
+
+<!-- Enable after adding the workflows:
+[![CodeQL](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/codeql.yml/badge.svg?branch=main)](…)
+[![playwright](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-playwright.yml/badge.svg?branch=main)](…)
+[![lighthouse](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-lighthouse.yml/badge.svg?branch=main)](…)
+-->
 
 A unified, research-to-execution repository for **entropy-aware portfolio trading**.
 
@@ -36,6 +47,15 @@ pip install pandas numpy matplotlib pytest
 pytest -q
 ```
 
+### Deterministic run (repro-friendly)
+```bash
+python -m backtest.cli run \
+  --strategy sma_cross \
+  --csv data/sample_multi_asset_data.csv \
+  --seed 42 \
+  --out-csv equity.csv
+```
+
 **Backtesting entry points** (after you add the code under `backtest/`):
 - `backtest/engine.py` — event-driven runner with OHLC-aware brackets & sizing
 - `backtest/portfolio.py` — simple equal-weight portfolio runner
@@ -60,33 +80,16 @@ df = pd.read_csv("data/AAPL.csv", parse_dates=[0], index_col=0)
 
 Placeholder CSVs are provided under `data/`. CI validates schema automatically.
 
-#### CSV schema (multi-asset)
-| Column                           | Type     | Notes                    |
-|----------------------------------|----------|--------------------------|
-| `DATE`                           | ISO8601  | e.g., `2024-01-02`       |
-| `<SYM>_Open/High/Low/Close`      | number   | one set per symbol       |
-| `<SYM>_Volume`                   | number   | optional                 |
+### CSV schema (multi-asset)
 
-> Example: `SPY_Open, SPY_High, SPY_Low, SPY_Close, SPY_Volume, QQQ_Open, ...`
+| Column                                 | Type        | Notes                                      |
+|----------------------------------------|-------------|--------------------------------------------|
+| `DATE`                                  | ISO 8601    | e.g. `2024-01-02`                          |
+| `<SYM>_Open` / `_High` / `_Low` / `_Close` | number   | One set per symbol (e.g., `SPY_Close`)     |
+| `<SYM>_Volume`                          | integer     | Optional, used by some strategies          |
 
-Deterministic run (if supported):
-```bash
-python -m backtest.cli run --csv data/sample_multi_asset_data.csv --strategy sma_cross --seed 42 --out-csv equity.csv
-```
-
----
-
-## Quick Commands
-
-Run a reproducible backtest (deterministic seed):
-
-```bash
-python -m backtest.cli run \
-  --strategy sma_cross \
-  --csv data/sample_multi_asset_data.csv \
-  --out-csv equity.csv \
-  --seed 42
-```
+> Example header for 2 symbols (SPY, QQQ):  
+> `DATE,SPY_Open,SPY_High,SPY_Low,SPY_Close,SPY_Volume,QQQ_Open,QQQ_High,QQQ_Low,QQQ_Close,QQQ_Volume`
 
 ---
 
