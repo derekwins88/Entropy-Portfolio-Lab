@@ -172,3 +172,7 @@ python -m backtest.cli run \
 ```
 
 Prints Alpha, Beta, Information Ratio, Up/Down Capture, and Tracking Error (because numbers are friends).
+
+## Phase 2 — Advanced Analysis
+See [docs/phase2.md](docs/phase2.md) for optimization, walk-forward, attribution, and proof capsules.
+

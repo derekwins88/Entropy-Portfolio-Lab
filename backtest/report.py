@@ -1,14 +1,60 @@
-"""Reporting helpers for walk-forward runs."""
-
+"""Reporting helpers for walk-forward and equity analytics."""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Sequence
 
+import numpy as np
 import pandas as pd
 
 from .walkforward import WalkForwardSplit, walkforward_drawdown
 
+
+# ---------------------------------------------------------------------------
+# Daily equity utilities
+# ---------------------------------------------------------------------------
+
+def rolling_sharpe(returns: pd.Series, window: int = 60) -> pd.Series:
+    """Compute a rolling Sharpe ratio scaled to daily frequency."""
+
+    win = max(int(window), 1)
+    rolling = returns.rolling(win)
+    mean = rolling.mean()
+    std = rolling.std(ddof=0).replace(0, np.nan)
+    return (mean / std) * np.sqrt(252)
+
+
+def drawdown(equity: pd.Series) -> pd.Series:
+    """Return the percentage drawdown of an equity curve."""
+
+    equity = equity.astype(float)
+    peak = equity.cummax().replace(0, np.nan)
+    return equity.divide(peak).subtract(1.0)
+
+
+def daily_equity_report(equity: pd.Series, window: int = 60) -> pd.DataFrame:
+    """Return a dataframe with equity, returns, drawdown and rolling Sharpe."""
+
+    equity = equity.rename("equity")
+    returns = equity.pct_change().fillna(0.0).rename("ret")
+    dd = drawdown(equity).rename("dd")
+    roll = rolling_sharpe(returns, window).rename(f"roll_sharpe_{window}")
+    return pd.concat([equity, returns, dd, roll], axis=1)
+
+
+def attach_regimes(df: pd.DataFrame, regimes: pd.Series) -> pd.DataFrame:
+    """Pad/forward-fill *regimes* to match *df*'s index."""
+
+    aligned = regimes.rename("regime")
+    aligned.index = pd.to_datetime(aligned.index)
+    aligned = aligned.sort_index()
+    joined = aligned.reindex(df.index, method="pad")
+    return pd.concat([df, joined], axis=1)
+
+
+# ---------------------------------------------------------------------------
+# Walk-forward helpers (existing functionality)
+# ---------------------------------------------------------------------------
 
 def _format_params(params: dict) -> str:
     if not params:
@@ -70,7 +116,7 @@ def plot_walkforward(results: Sequence[WalkForwardSplit], path: str | Path) -> P
         raise ValueError("No walk-forward results to plot")
 
     equity = results[-1].equity_curve
-    drawdown = walkforward_drawdown(equity)
+    dd = walkforward_drawdown(equity)
 
     fig, (ax_eq, ax_dd) = plt.subplots(2, 1, sharex=True, figsize=(10, 8))
     equity.plot(ax=ax_eq, color="black", label="Equity")
@@ -81,7 +127,7 @@ def plot_walkforward(results: Sequence[WalkForwardSplit], path: str | Path) -> P
         ax_eq.axvspan(split.train_start, split.train_end, color="#4c72b0", alpha=0.05)
         ax_eq.axvspan(split.test_start, split.test_end, color="#dd8452", alpha=0.18)
 
-    drawdown.plot(ax=ax_dd, color="#c44e52", label="Drawdown")
+    dd.plot(ax=ax_dd, color="#c44e52", label="Drawdown")
     ax_dd.axhline(0.0, color="black", linewidth=0.8)
     ax_dd.set_ylabel("Drawdown")
     ax_dd.set_xlabel("Date")
@@ -97,4 +143,13 @@ def plot_walkforward(results: Sequence[WalkForwardSplit], path: str | Path) -> P
     return out_path
 
 
-__all__ = ["walkforward_table", "save_table", "print_table", "plot_walkforward"]
+__all__ = [
+    "rolling_sharpe",
+    "drawdown",
+    "daily_equity_report",
+    "attach_regimes",
+    "walkforward_table",
+    "save_table",
+    "print_table",
+    "plot_walkforward",
+]

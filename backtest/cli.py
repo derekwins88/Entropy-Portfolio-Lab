@@ -1,21 +1,24 @@
 """Command line interface for the backtest package."""
-
 from __future__ import annotations
 
 import argparse
 import json
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 import pandas as pd
 
+from . import report as wf_report
 from .core.engine import run_backtest
 from .core.metrics import summarize
 from .portfolio import run_portfolio
 from .walkforward import anchored_walk_forward, parse_grid_spec
-from . import report as wf_report
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _load_csv(path: str) -> pd.DataFrame:
     p = Path(path)
@@ -37,10 +40,14 @@ def _load_price_series(path: str) -> pd.Series:
     raise ValueError(f"Could not infer price column from benchmark file: {path}")
 
 
-def _resolve_strategy(path: str, params: Dict[str, Any]) -> Any:
+def _load_strategy_class(path: str):
     module_path, class_name = path.rsplit(":", 1)
     module = import_module(module_path)
-    cls = getattr(module, class_name)
+    return getattr(module, class_name)
+
+
+def _resolve_strategy(path: str, params: Dict[str, Any]) -> Any:
+    cls = _load_strategy_class(path)
     return cls(params or {})
 
 
@@ -61,6 +68,42 @@ def _load_json_payload(value: Optional[str]) -> Dict[str, Any]:
         raise ValueError("Parameters JSON must decode to a dictionary")
     return data
 
+
+def _coerce_grid_value(raw: str) -> Any:
+    lowered = raw.lower()
+    if lowered in {"none", "null"}:
+        return None
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    try:
+        if raw.startswith("0") and raw not in {"0", "0.0"} and not raw.startswith("0."):
+            raise ValueError
+        return int(raw)
+    except ValueError:
+        try:
+            return float(raw)
+        except ValueError:
+            return raw
+
+
+def _parse_simple_grid(tokens: Optional[Sequence[str]]) -> Dict[str, Sequence[Any]]:
+    if not tokens:
+        return {}
+    grid: Dict[str, list[Any]] = {}
+    for token in tokens:
+        if "=" not in token:
+            raise ValueError(f"Malformed grid token: {token}")
+        name, raw_values = token.split("=", 1)
+        values = [_coerce_grid_value(v.strip()) for v in raw_values.split(",") if v.strip()]
+        if not values:
+            raise ValueError(f"No values supplied for grid parameter '{name}'")
+        grid[name] = values
+    return grid
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
 
 def cmd_run(args: argparse.Namespace) -> None:
     df = _load_csv(args.csv)
@@ -94,8 +137,7 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
     for item in spec:
         strategy_path = item["strategy"]
         if strategy_path not in factories:
-            module, cls = strategy_path.rsplit(":", 1)
-            factories[strategy_path] = getattr(import_module(module), cls)
+            factories[strategy_path] = _load_strategy_class(strategy_path)
     curve = run_portfolio(
         spec,
         factories,
@@ -116,12 +158,56 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
 
 def cmd_walk(args: argparse.Namespace) -> None:
     df = _load_csv(args.csv)
+
+    use_optimize = any(
+        value is not None
+        for value in (args.train_years, args.test_years, args.step_years)
+    )
+    if use_optimize:
+        from .optimize import log_results, walk_forward
+
+        grid = _parse_simple_grid(args.grid)
+        if not grid:
+            raise ValueError("Parameter grid is required for walk-forward optimization")
+        base_params = _load_json_payload(args.params)
+        Strat = _load_strategy_class(args.strategy)
+
+        def factory(overrides: Dict[str, Any]) -> Any:
+            params = dict(base_params)
+            params.update(overrides)
+            return Strat(params)
+
+        run_kwargs = dict(
+            mode=args.mode,
+            size=args.size,
+            size_notional=args.size_notional,
+            risk_R=args.risk_R,
+            atr_len=args.atr_len,
+            risk_pct=args.risk_pct,
+            commission=args.commission,
+            slippage_bps=args.slippage,
+        )
+        results = walk_forward(
+            df,
+            factory,
+            grid,
+            train_years=args.train_years or 2,
+            test_years=args.test_years or 1,
+            step_years=args.step_years or 1,
+            run_kwargs=run_kwargs,
+            score_key=args.score,
+        )
+        log_results(results, args.out_csv, args.out_json)
+        if results.empty:
+            print("No walk-forward splits produced output")
+            return
+        with pd.option_context("display.max_rows", None, "display.width", None):
+            print(results.to_string(index=False))
+        return
+
     bench = _load_price_series(args.bench) if args.bench else None
 
-    module_path, class_name = args.strategy.rsplit(":", 1)
-    module = import_module(module_path)
-    Strat = getattr(module, class_name)
-
+    Strat = _load_strategy_class(args.strategy)
     base_params = _load_json_payload(args.params)
     grid = parse_grid_spec(args.grid)
     param_sets = [
@@ -165,6 +251,78 @@ def cmd_walk(args: argparse.Namespace) -> None:
         plot_path = args.plot if isinstance(args.plot, str) else "wf_equity.png"
         wf_report.plot_walkforward(results, plot_path)
 
+
+def cmd_opt(args: argparse.Namespace) -> None:
+    from .optimize import grid_search, log_results
+
+    df = _load_csv(args.csv)
+    grid = _parse_simple_grid(args.grid)
+    base_params = _load_json_payload(args.params)
+    Strat = _load_strategy_class(args.strategy)
+
+    def factory(overrides: Dict[str, Any]) -> Any:
+        params = dict(base_params)
+        params.update(overrides)
+        return Strat(params)
+
+    run_kwargs = dict(
+        mode=args.mode,
+        size=args.size,
+        size_notional=args.size_notional,
+        risk_R=args.risk_R,
+        atr_len=args.atr_len,
+        risk_pct=args.risk_pct,
+        commission=args.commission,
+        slippage_bps=args.slippage,
+    )
+
+    results = grid_search(
+        df,
+        factory,
+        grid,
+        run_kwargs=run_kwargs,
+        score_key=args.score,
+    )
+    log_results(results, args.out_csv, args.out_json)
+    if results.empty:
+        print("Grid search produced no results")
+        return
+    top = results.head(args.top)
+    with pd.option_context("display.max_rows", None, "display.width", None):
+        print(top.to_string(index=False))
+
+
+def cmd_attr(args: argparse.Namespace) -> None:
+    from .attribution import (
+        attribute_returns,
+        percent_contributions,
+        pivot_attribution,
+        summarize_attribution,
+    )
+
+    trades = pd.read_csv(args.trades).to_dict(orient="records")
+    regimes = None
+    if args.regimes:
+        regime_df = pd.read_csv(args.regimes, parse_dates=[0], index_col=0)
+        regimes = regime_df.iloc[:, 0]
+    df = attribute_returns(
+        trades,
+        regimes=regimes,
+        asset_key=args.asset_key,
+        exit_time_key=args.exit_key,
+        pnl_key=args.pnl_key,
+    )
+    summary = summarize_attribution(df)
+    print("Summary:", summary)
+    if df.empty:
+        return
+    print("\nPivot (PnL):\n", pivot_attribution(df))
+    print("\nPercent (%):\n", percent_contributions(df))
+
+
+# ---------------------------------------------------------------------------
+# Parser
+# ---------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="epl")
@@ -220,6 +378,10 @@ def build_parser() -> argparse.ArgumentParser:
     walk_p.add_argument("--select", default="Sharpe_annualized", help="In-sample metric for selection")
     walk_p.add_argument("--min-train", type=int, default=504, dest="min_train")
     walk_p.add_argument("--test-window", type=int, default=252, dest="test_window")
+    walk_p.add_argument("--train-years", type=int, dest="train_years")
+    walk_p.add_argument("--test-years", type=int, dest="test_years")
+    walk_p.add_argument("--step-years", type=int, dest="step_years")
+    walk_p.add_argument("--score", default="Sharpe_annualized")
     walk_p.add_argument("--mode", choices=["delta", "target"], default="target")
     walk_p.add_argument("--cash", type=float, default=100_000.0)
     walk_p.add_argument("--size", type=int, default=1)
@@ -230,8 +392,40 @@ def build_parser() -> argparse.ArgumentParser:
     walk_p.add_argument("--commission", type=float, default=0.0)
     walk_p.add_argument("--slippage", type=float, default=0.0)
     walk_p.add_argument("--out-csv")
+    walk_p.add_argument("--out-json")
     walk_p.add_argument("--plot", nargs="?", const="wf_equity.png")
     walk_p.set_defaults(func=cmd_walk)
+
+    opt_p = sub.add_parser("opt", help="Parameter grid search")
+    opt_p.add_argument("--csv", required=True)
+    opt_p.add_argument(
+        "--strategy",
+        required=True,
+        help="module:Class (e.g. backtest.strategies.flat:Flat)",
+    )
+    opt_p.add_argument("--grid", nargs="+", required=True, help="param=v1,v2 ...")
+    opt_p.add_argument("--params", help="JSON file or string with base parameters")
+    opt_p.add_argument("--mode", choices=["delta", "target"], default="target")
+    opt_p.add_argument("--size", type=int, default=1)
+    opt_p.add_argument("--size-notional", type=float, dest="size_notional")
+    opt_p.add_argument("--risk-R", type=float, dest="risk_R")
+    opt_p.add_argument("--atr-len", type=int, dest="atr_len")
+    opt_p.add_argument("--risk-pct", type=float, default=0.01, dest="risk_pct")
+    opt_p.add_argument("--commission", type=float, default=0.0)
+    opt_p.add_argument("--slippage", type=float, default=0.0)
+    opt_p.add_argument("--score", default="Sharpe_annualized")
+    opt_p.add_argument("--top", type=int, default=20, help="Rows to display")
+    opt_p.add_argument("--out-csv")
+    opt_p.add_argument("--out-json")
+    opt_p.set_defaults(func=cmd_opt)
+
+    attr_p = sub.add_parser("attr", help="Performance attribution from trades.csv")
+    attr_p.add_argument("--trades", required=True)
+    attr_p.add_argument("--regimes", help="CSV with Date + Regime column")
+    attr_p.add_argument("--asset-key", default="asset", dest="asset_key")
+    attr_p.add_argument("--exit-key", default="exit_time", dest="exit_key")
+    attr_p.add_argument("--pnl-key", default="pnl", dest="pnl_key")
+    attr_p.set_defaults(func=cmd_attr)
 
     return parser
 
