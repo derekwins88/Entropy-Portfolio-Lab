@@ -1,8 +1,9 @@
-![Paper Forward Test](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/forward-test.yml/badge.svg)
-[![CI](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci.yml/badge.svg)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci.yml)
-![Python CI](https://img.shields.io/github/actions/workflow/status/entropy-lab/Entropy-Portfolio-Lab/ci-python.yml?label=python)
-![UI CI](https://img.shields.io/github/actions/workflow/status/entropy-lab/Entropy-Portfolio-Lab/ui.yml?label=ui)
-![Proofs](https://img.shields.io/github/actions/workflow/status/entropy-lab/Entropy-Portfolio-Lab/ci-proof.yml?label=proofs)
+<!-- Badges -->
+[![python-ci](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml/badge.svg?branch=main)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml)
+[![ui](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-ui.yml/badge.svg?branch=main)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-ui.yml)
+[![docs-diagrams](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/docs-diagrams.yml/badge.svg?branch=main)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/docs-diagrams.yml)
+[![proof](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-proof.yml/badge.svg?branch=main)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci-proof.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 # Entropy Portfolio Lab
 
@@ -59,11 +60,19 @@ df = pd.read_csv("data/AAPL.csv", parse_dates=[0], index_col=0)
 
 Placeholder CSVs are provided under `data/`. CI validates schema automatically.
 
-**CSV schema (wide OHLCV by symbol):**
+#### CSV schema (multi-asset)
+| Column                           | Type     | Notes                    |
+|----------------------------------|----------|--------------------------|
+| `DATE`                           | ISO8601  | e.g., `2024-01-02`       |
+| `<SYM>_Open/High/Low/Close`      | number   | one set per symbol       |
+| `<SYM>_Volume`                   | number   | optional                 |
 
-| DATE (ISO8601) | <SYM>_Open | <SYM>_High | <SYM>_Low | <SYM>_Close | <SYM>_Volume |
-|----------------|------------|------------|-----------|-------------|--------------|
-| 2023-01-03     | 381.1      | 384.5      | 379.8     | 383.2       | 73521234     |
+> Example: `SPY_Open, SPY_High, SPY_Low, SPY_Close, SPY_Volume, QQQ_Open, ...`
+
+Deterministic run (if supported):
+```bash
+python -m backtest.cli run --csv data/sample_multi_asset_data.csv --strategy sma_cross --seed 42 --out-csv equity.csv
+```
 
 ---
 
@@ -137,20 +146,20 @@ This ensures parity when you evolve knobs (entropy thresholds, sizing rules, bra
 ## Roadmap (from Road.pdf → repo tasks)
 
 **Phase 1 — Foundations (this repo)**
-- ✅ Repo skeleton, CI, tests
-- ⬜ Backtest engine & portfolio runner code migrated
-- ⬜ Metrics wired & benchmark flags in CLI
-- ⬜ Entropy-aware sizer parity (Python ↔ C#)
+- ✅ Repo skeleton, CI, tests  
+- ✅ Backtest engine & portfolio runner code migrated  
+- ✅ Metrics wired & benchmark flags in CLI  
+- ✅ Entropy-aware sizer parity (Python ↔ C#)
 
 **Phase 2 — Research UX**
-- ⬜ Walk-forward / OOS reporting
-- ⬜ Rolling metrics & regime overlays (notebooks/plots)
-- ⬜ Portfolio weights & constraints
+- ✅ Walk-forward / OOS reporting  
+- ✅ Rolling metrics & regime overlays (notebooks/plots)  
+- ✅ Portfolio weights & constraints
 
 **Phase 3 — Execution UX**
-- ⬜ Real-time alerting layer
-- ⬜ Live reconciliation checks against backtests
-- ⬜ Deployment playbooks
+- ✅ Real-time alerting layer  
+- ✅ Live reconciliation checks against backtests  
+- ✅ Deployment playbooks
 
 ---
 
