@@ -1,32 +1,38 @@
 name: docs-diagrams
-on:
-  push: { branches: [ main, master ] }
-  pull_request: {}
+on: [push, pull_request]
+
 jobs:
   render:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: "20" }
+        with:
+          node-version: '20'
       - name: Install mermaid-cli
-        run: npm i -g @mermaid-js/mermaid-cli@10
+        run: npm i -g @mermaid-js/mermaid-cli@10.9.0
       - name: Render Mermaid blocks from docs/system_diagram.md
+        shell: bash
         run: |
-          mkdir -p docs/assets
-          # Extract code fences and render them in order
-          awk '/```mermaid/{flag=1; next} /```/{flag=0} flag' docs/system_diagram.md > /tmp/diagrams.mmd
-          # Split into individual diagrams separated by blank lines
-          csplit -sz /tmp/diagrams.mmd '/^$/' '{*}' || true
+          set -euo pipefail
+          IN=docs/system_diagram.md
+          OUTDIR=docs-diagrams/out
+          CFG=docs-diagrams/puppeteer.json
+          mkdir -p "$OUTDIR"
           i=0
-          for f in xx*; do
-            outp="docs/assets/diagram_$i"
-            mmdc -i "$f" -o "${outp}.png" -b transparent -p .puppeteer.cjs
-            mmdc -i "$f" -o "${outp}.svg" -b transparent -p .puppeteer.cjs
-            i=$((i+1))
+          # extract fenced ```mermaid blocks
+          awk '/^```mermaid/{flag=1; next} /^```/{flag=0} flag{print}' "$IN" \
+          | awk 'BEGIN{b=0} /^ *$/{next} {print} END{}' \
+          | csplit -s -f "$OUTDIR/block-" -b "%02d.mmd" - '/^$/+1' '{*}' || true
+          shopt -s nullglob
+          for f in "$OUTDIR"/block-*.mmd; do
+            png="${f%.mmd}.png"
+            # -p/--puppeteerConfigFile reads JSON
+            mmdc -i "$f" -o "$png" -p "$CFG" --backgroundColor transparent
+            echo "Rendered $png"
           done
       - name: Upload diagram artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: docs-diagrams
-          path: docs/assets
+          name: mermaid-diagrams
+          path: docs-diagrams/out/*.png
