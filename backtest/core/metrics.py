@@ -13,16 +13,6 @@ from .data import infer_periods_per_year, rolling_drawdown
 SeriesLike = Union[pd.Series, pd.DataFrame]
 
 
-def _capture_ratio(strat: pd.Series, bench: pd.Series) -> float:
-    if strat.empty or bench.empty:
-        return float("nan")
-    strat_total = float(np.prod(1.0 + strat) - 1.0)
-    bench_total = float(np.prod(1.0 + bench) - 1.0)
-    if bench_total == 0:
-        return float("nan")
-    return strat_total / bench_total
-
-
 def _as_series(curve: SeriesLike) -> pd.Series:
     if isinstance(curve, pd.DataFrame):
         if curve.shape[1] == 1:
@@ -31,6 +21,96 @@ def _as_series(curve: SeriesLike) -> pd.Series:
             "Expected a Series or single-column DataFrame for equity curve"
         )
     return curve.astype(float)
+
+
+def daily_returns(series: pd.Series) -> pd.Series:
+    """Return percentage changes with a forward-filled, sorted index."""
+
+    s = series.astype(float).copy()
+    s.index = pd.to_datetime(s.index)
+    s = s.sort_index().ffill().dropna()
+    if s.empty:
+        return pd.Series(dtype=float)
+    return s.pct_change().fillna(0.0)
+
+
+def capture_ratios(equity: pd.Series, bench: pd.Series) -> dict:
+    """Compute up/down capture ratios and tracking error on daily returns."""
+
+    eq_ret = daily_returns(equity)
+    bench_ret = daily_returns(bench)
+    eq_ret, bench_ret = eq_ret.align(bench_ret, join="inner")
+    df = pd.concat([eq_ret, bench_ret], axis=1).dropna()
+    if df.empty:
+        return {"UpCapture": 0.0, "DownCapture": 0.0, "TrackingError": 0.0}
+
+    up = df[df.iloc[:, 1] > 0]
+    down = df[df.iloc[:, 1] < 0]
+    eps = 1e-12
+    up_cap = (up.iloc[:, 0].mean() / (up.iloc[:, 1].mean() + eps)) if len(up) else 0.0
+    down_cap = (
+        down.iloc[:, 0].mean() / (down.iloc[:, 1].mean() + eps)
+        if len(down)
+        else 0.0
+    )
+    te = (df.iloc[:, 0] - df.iloc[:, 1]).std(ddof=0) * math.sqrt(252)
+    return {
+        "UpCapture": float(up_cap),
+        "DownCapture": float(down_cap),
+        "TrackingError": float(te if np.isfinite(te) else 0.0),
+    }
+
+
+def active_stats(equity: pd.Series, bench: pd.Series) -> Dict[str, float]:
+    """Return active risk/return statistics relative to *bench*."""
+
+    eq_ret = daily_returns(equity)
+    bench_ret = daily_returns(bench)
+    eq_ret, bench_ret = eq_ret.align(bench_ret, join="inner")
+    eq_ret = eq_ret.dropna()
+    bench_ret = bench_ret.dropna()
+
+    if len(eq_ret) < 2 or len(bench_ret) < 2:
+        return {
+            "Alpha": np.nan,
+            "Beta": np.nan,
+            "InformationRatio": np.nan,
+            "TrackingError": 0.0,
+        }
+
+    bench_var = float(bench_ret.var(ddof=0))
+    if not np.isfinite(bench_var) or bench_var <= 0:
+        return {
+            "Alpha": np.nan,
+            "Beta": np.nan,
+            "InformationRatio": np.nan,
+            "TrackingError": 0.0,
+        }
+
+    eq_arr = eq_ret.to_numpy()
+    bench_arr = bench_ret.to_numpy()
+    cov = float(np.cov(eq_arr, bench_arr, ddof=0)[0, 1])
+    beta = cov / bench_var if bench_var else np.nan
+
+    periods_per_year = max(infer_periods_per_year(eq_ret.index), 1)
+    annual_scale = math.sqrt(periods_per_year)
+    diff = eq_ret - bench_ret
+    tracking_error = float(diff.std(ddof=0) * annual_scale)
+
+    strat_mean = float(eq_ret.mean())
+    bench_mean = float(bench_ret.mean())
+    alpha = (strat_mean - beta * bench_mean) * periods_per_year if np.isfinite(beta) else np.nan
+
+    info_ratio = np.nan
+    if tracking_error > 0 and np.isfinite(tracking_error):
+        info_ratio = (strat_mean - bench_mean) * periods_per_year / tracking_error
+
+    return {
+        "Alpha": float(alpha) if np.isfinite(alpha) else np.nan,
+        "Beta": float(beta) if np.isfinite(beta) else np.nan,
+        "InformationRatio": float(info_ratio) if np.isfinite(info_ratio) else np.nan,
+        "TrackingError": tracking_error if tracking_error > 0 else 0.0,
+    }
 
 
 def _annualized_return(equity: pd.Series, periods_per_year: int) -> float:
@@ -118,57 +198,16 @@ def summarize(
         stats["CVaR_5"] = np.nan
 
     # Benchmarked stats -------------------------------------------------
+    bench_series: Optional[pd.Series] = None
     if bench is not None:
-        bench_series = _as_series(bench).reindex(equity.index).ffill().dropna()
-        bench_returns = bench_series.pct_change()
-        aligned, bench_aligned = returns.align(bench_returns, join="inner")
-        aligned = aligned.dropna()
-        bench_aligned = bench_aligned.dropna()
-        if not bench_aligned.empty:
-            aligned = aligned.reindex(bench_aligned.index).dropna()
-            bench_aligned = bench_aligned.reindex(aligned.index)
-        if not aligned.empty and not bench_aligned.empty and bench_aligned.var() > 0:
-            covariance = np.cov(aligned, bench_aligned)[0, 1]
-            beta = covariance / bench_aligned.var()
-            stats["Beta"] = float(beta)
+        try:
+            bench_series = _as_series(bench).dropna()
+        except ValueError:
+            bench_series = None
 
-            strat_ann = _annualized_return((1 + aligned).cumprod(), periods_per_year)
-            bench_ann = _annualized_return(
-                (1 + bench_aligned).cumprod(), periods_per_year
-            )
-            stats["Alpha"] = float(strat_ann - beta * bench_ann)
-
-            diff = aligned - bench_aligned
-            tracking_error = float(diff.std() * math.sqrt(periods_per_year))
-            stats["TrackingError"] = tracking_error if tracking_error > 0 else 0.0
-            if tracking_error > 0:
-                stats["InformationRatio"] = float(
-                    (aligned.mean() - bench_aligned.mean())
-                    * math.sqrt(periods_per_year)
-                    / tracking_error
-                )
-            else:
-                stats["InformationRatio"] = np.nan
-
-            up_mask = bench_aligned > 0
-            down_mask = bench_aligned < 0
-            stats["UpCapture"] = (
-                float(_capture_ratio(aligned[up_mask], bench_aligned[up_mask]))
-                if up_mask.any()
-                else np.nan
-            )
-            stats["DownCapture"] = (
-                float(_capture_ratio(aligned[down_mask], bench_aligned[down_mask]))
-                if down_mask.any()
-                else np.nan
-            )
-        else:
-            stats["Beta"] = np.nan
-            stats["Alpha"] = np.nan
-            stats["InformationRatio"] = np.nan
-            stats["TrackingError"] = np.nan
-            stats["UpCapture"] = np.nan
-            stats["DownCapture"] = np.nan
+    if bench_series is not None and not bench_series.empty:
+        stats.update(active_stats(equity, bench_series))
+        stats.update(capture_ratios(equity, bench_series))
 
     # Trade diagnostics --------------------------------------------------
     trades_df: Optional[pd.DataFrame] = None

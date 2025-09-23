@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from backtest.core.metrics import summarize
 
@@ -15,5 +16,5 @@ def test_summarize_benchmark_metrics():
     assert abs(stats["Alpha"]) < 1e-12
     assert stats["TrackingError"] == 0.0
     assert np.isnan(stats["InformationRatio"])
-    assert stats["UpCapture"] == 1.0
-    assert stats["DownCapture"] == 1.0
+    assert stats["UpCapture"] == pytest.approx(1.0)
+    assert stats["DownCapture"] == pytest.approx(1.0)

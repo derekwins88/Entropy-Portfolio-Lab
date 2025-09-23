@@ -27,6 +27,7 @@ __all__ = [
     "pivot_attribution",
     "percent_contributions",
     "summarize_attribution",
+    "plot_attribution",
 ]
 
 
@@ -115,3 +116,22 @@ def summarize_attribution(df: pd.DataFrame) -> dict:
         "top_asset": None if by_asset.empty else by_asset.index[0],
         "top_regime": None if by_regime.empty else by_regime.index[0],
     }
+
+
+def plot_attribution(df: pd.DataFrame, ax=None):
+    """Render a stacked bar chart of attribution by regime and asset."""
+
+    if df.empty:
+        raise ValueError("Attribution dataframe is empty")
+
+    import matplotlib.pyplot as plt
+
+    pivot = pivot_attribution(df)
+    if pivot.empty:
+        raise ValueError("Attribution pivot is empty")
+
+    axis = ax or plt.gca()
+    pivot.T.plot(kind="bar", stacked=True, ax=axis, title="PnL by Regime (stacked by asset)")
+    axis.set_ylabel("PnL")
+    axis.set_xlabel("Regime")
+    return axis

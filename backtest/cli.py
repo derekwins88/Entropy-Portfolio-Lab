@@ -3,13 +3,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import random
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
+import numpy as np
 import pandas as pd
 
 from . import report as wf_report
+from .report import daily_equity_report
 from .core.engine import run_backtest
 from .core.metrics import summarize
 from .portfolio import run_portfolio
@@ -20,6 +24,14 @@ from .walkforward import anchored_walk_forward, parse_grid_spec
 # Helpers
 # ---------------------------------------------------------------------------
 
+
+def set_seed(seed: Optional[int]) -> None:
+    if seed is None:
+        return
+    random.seed(seed)
+    np.random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
 def _load_csv(path: str) -> pd.DataFrame:
     p = Path(path)
     if not p.exists():
@@ -27,17 +39,20 @@ def _load_csv(path: str) -> pd.DataFrame:
     return pd.read_csv(p, parse_dates=[0], index_col=0)
 
 
-def _load_price_series(path: str) -> pd.Series:
+def _load_benchmark_series(path: str) -> pd.Series:
     df = _load_csv(path)
-    for column in ("close", "Close", "adj_close", "Adj Close", "price", "Price"):
-        if column in df.columns:
-            series = df[column]
-            return series.astype(float)
-    if isinstance(df, pd.Series):
-        return df.astype(float)
-    if df.shape[1] == 1:
-        return df.iloc[:, 0].astype(float)
-    raise ValueError(f"Could not infer price column from benchmark file: {path}")
+    bcols = {col.lower(): col for col in df.columns}
+    numeric = df.select_dtypes("number")
+    column = (
+        bcols.get("adj close")
+        or bcols.get("close")
+        or (numeric.columns.tolist()[-1] if not numeric.empty else None)
+    )
+    if column is None:
+        raise ValueError(f"Could not infer benchmark column from: {path}")
+    series = df[column].astype(float).rename("bench")
+    series.index = pd.to_datetime(series.index)
+    return series.sort_index()
 
 
 def _load_strategy_class(path: str):
@@ -106,9 +121,10 @@ def _parse_simple_grid(tokens: Optional[Sequence[str]]) -> Dict[str, Sequence[An
 # ---------------------------------------------------------------------------
 
 def cmd_run(args: argparse.Namespace) -> None:
+    set_seed(args.seed)
     df = _load_csv(args.csv)
     strategy = _resolve_strategy(args.strategy, {})
-    bench: Optional[pd.Series] = _load_price_series(args.bench) if args.bench else None
+    bench: Optional[pd.Series] = _load_benchmark_series(args.bench) if args.bench else None
     result = run_backtest(
         df,
         strategy,
@@ -130,8 +146,12 @@ def cmd_run(args: argparse.Namespace) -> None:
     sharpe = stats.get("Sharpe_annualized", stats.get("Sharpe_d", 0.0))
     print(f"Sharpe: {sharpe}")
 
+    if args.out_daily:
+        daily_equity_report(result.equity_curve).to_csv(args.out_daily)
+
 
 def cmd_portfolio(args: argparse.Namespace) -> None:
+    set_seed(args.seed)
     spec = json.load(open(args.spec, "r"))
     factories: Dict[str, Any] = {}
     for item in spec:
@@ -151,13 +171,32 @@ def cmd_portfolio(args: argparse.Namespace) -> None:
         commission=args.commission,
         slippage_bps=args.slippage,
     )
-    print(f"Start: {curve.iloc[0]:.2f} End: {curve.iloc[-1]:.2f}")
-    if args.out_csv:
-        curve.to_frame("equity").to_csv(args.out_csv)
+    skipped = curve.attrs.get("skipped", [])
+    if skipped:
+        print(
+            "Skipped {} dataset(s) due to invalid data: {}".format(
+                len(skipped), ", ".join(skipped)
+            )
+        )
+    if curve.empty:
+        print("No valid equity curves produced")
+    else:
+        print(f"Start: {curve.iloc[0]:.2f} End: {curve.iloc[-1]:.2f}")
+        if args.out_daily:
+            daily_equity_report(curve).to_csv(args.out_daily)
+        if args.out_csv:
+            curve.to_frame("equity").to_csv(args.out_csv)
+    if args.out_csv and curve.empty:
+        pd.DataFrame(columns=["equity"]).to_csv(args.out_csv)
 
 
 def cmd_walk(args: argparse.Namespace) -> None:
+    set_seed(args.seed)
     df = _load_csv(args.csv)
+
+    bench_series: Optional[pd.Series] = (
+        _load_benchmark_series(args.bench) if args.bench else None
+    )
 
     use_optimize = any(
         value is not None
@@ -196,6 +235,7 @@ def cmd_walk(args: argparse.Namespace) -> None:
             step_years=args.step_years or 1,
             run_kwargs=run_kwargs,
             score_key=args.score,
+            bench=bench_series,
         )
         log_results(results, args.out_csv, args.out_json)
         if results.empty:
@@ -204,8 +244,6 @@ def cmd_walk(args: argparse.Namespace) -> None:
         with pd.option_context("display.max_rows", None, "display.width", None):
             print(results.to_string(index=False))
         return
-
-    bench = _load_price_series(args.bench) if args.bench else None
 
     Strat = _load_strategy_class(args.strategy)
     base_params = _load_json_payload(args.params)
@@ -236,7 +274,7 @@ def cmd_walk(args: argparse.Namespace) -> None:
         risk_pct=args.risk_pct,
         commission=args.commission,
         slippage_bps=args.slippage,
-        bench=bench,
+        bench=bench_series,
     )
 
     if not results:
@@ -255,10 +293,14 @@ def cmd_walk(args: argparse.Namespace) -> None:
 def cmd_opt(args: argparse.Namespace) -> None:
     from .optimize import grid_search, log_results
 
+    set_seed(args.seed)
     df = _load_csv(args.csv)
     grid = _parse_simple_grid(args.grid)
     base_params = _load_json_payload(args.params)
     Strat = _load_strategy_class(args.strategy)
+    bench_series: Optional[pd.Series] = (
+        _load_benchmark_series(args.bench) if args.bench else None
+    )
 
     def factory(overrides: Dict[str, Any]) -> Any:
         params = dict(base_params)
@@ -282,6 +324,7 @@ def cmd_opt(args: argparse.Namespace) -> None:
         grid,
         run_kwargs=run_kwargs,
         score_key=args.score,
+        bench=bench_series,
     )
     log_results(results, args.out_csv, args.out_json)
     if results.empty:
@@ -298,6 +341,7 @@ def cmd_attr(args: argparse.Namespace) -> None:
         percent_contributions,
         pivot_attribution,
         summarize_attribution,
+        plot_attribution,
     )
 
     trades = pd.read_csv(args.trades).to_dict(orient="records")
@@ -319,6 +363,20 @@ def cmd_attr(args: argparse.Namespace) -> None:
     print("\nPivot (PnL):\n", pivot_attribution(df))
     print("\nPercent (%):\n", percent_contributions(df))
 
+    if args.plot is not None:
+        ax = plot_attribution(df)
+        fig = ax.figure
+        plot_path = args.plot or "attribution.png"
+        fig.tight_layout()
+        fig.savefig(plot_path, dpi=150)
+        try:
+            import matplotlib.pyplot as plt
+
+            plt.close(fig)
+        except ImportError:
+            pass
+        print(f"Saved attribution plot to {plot_path}")
+
 
 # ---------------------------------------------------------------------------
 # Parser
@@ -335,7 +393,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="module:Class (e.g. backtest.strategies.flat:Flat)",
     )
-    run_p.add_argument("--bench", help="Benchmark CSV (Close column used for metrics)")
+    run_p.add_argument("--bench", help="Benchmark CSV (Date,Close/Adj Close)")
     run_p.add_argument("--mode", choices=["delta", "target"], default="target")
     run_p.add_argument("--cash", type=float, default=100_000.0)
     run_p.add_argument("--size", type=int, default=1)
@@ -345,6 +403,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--risk-pct", type=float, default=0.01, dest="risk_pct")
     run_p.add_argument("--commission", type=float, default=0.0)
     run_p.add_argument("--slippage", type=float, default=0.0)
+    run_p.add_argument("--out-daily", dest="out_daily", help="Write daily equity CSV")
+    run_p.add_argument("--seed", type=int, help="Seed random number generators")
     run_p.set_defaults(func=cmd_run)
 
     port_p = sub.add_parser("portfolio", help="Aggregate multiple strategies")
@@ -363,6 +423,8 @@ def build_parser() -> argparse.ArgumentParser:
     port_p.add_argument("--commission", type=float, default=0.0)
     port_p.add_argument("--slippage", type=float, default=0.0)
     port_p.add_argument("--out-csv")
+    port_p.add_argument("--out-daily", dest="out_daily", help="Write daily equity CSV")
+    port_p.add_argument("--seed", type=int, help="Seed random number generators")
     port_p.set_defaults(func=cmd_portfolio)
 
     walk_p = sub.add_parser("walk", help="Anchored walk-forward evaluation")
@@ -374,7 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     walk_p.add_argument("--grid", nargs="+", help="Parameter grid spec e.g. k=10,20 m=2,5")
     walk_p.add_argument("--params", help="JSON file or string with base parameters")
-    walk_p.add_argument("--bench", help="Benchmark CSV (Close column used for metrics)")
+    walk_p.add_argument("--bench", help="Benchmark CSV (Date,Close/Adj Close)")
     walk_p.add_argument("--select", default="Sharpe_annualized", help="In-sample metric for selection")
     walk_p.add_argument("--min-train", type=int, default=504, dest="min_train")
     walk_p.add_argument("--test-window", type=int, default=252, dest="test_window")
@@ -394,6 +456,7 @@ def build_parser() -> argparse.ArgumentParser:
     walk_p.add_argument("--out-csv")
     walk_p.add_argument("--out-json")
     walk_p.add_argument("--plot", nargs="?", const="wf_equity.png")
+    walk_p.add_argument("--seed", type=int, help="Seed random number generators")
     walk_p.set_defaults(func=cmd_walk)
 
     opt_p = sub.add_parser("opt", help="Parameter grid search")
@@ -417,6 +480,8 @@ def build_parser() -> argparse.ArgumentParser:
     opt_p.add_argument("--top", type=int, default=20, help="Rows to display")
     opt_p.add_argument("--out-csv")
     opt_p.add_argument("--out-json")
+    opt_p.add_argument("--bench", help="Benchmark CSV (Date,Close/Adj Close)")
+    opt_p.add_argument("--seed", type=int, help="Seed random number generators")
     opt_p.set_defaults(func=cmd_opt)
 
     attr_p = sub.add_parser("attr", help="Performance attribution from trades.csv")
@@ -425,6 +490,12 @@ def build_parser() -> argparse.ArgumentParser:
     attr_p.add_argument("--asset-key", default="asset", dest="asset_key")
     attr_p.add_argument("--exit-key", default="exit_time", dest="exit_key")
     attr_p.add_argument("--pnl-key", default="pnl", dest="pnl_key")
+    attr_p.add_argument(
+        "--plot",
+        nargs="?",
+        const="attribution.png",
+        help="Render stacked bar plot to optional path (default: attribution.png)",
+    )
     attr_p.set_defaults(func=cmd_attr)
 
     return parser

@@ -9,6 +9,7 @@ import pandas as pd
 
 from .engine import RunResult, run_backtest
 from .strategy import BarStrategy
+from .data import ensure_datetime_index, standardize_columns
 
 
 @dataclass
@@ -22,6 +23,20 @@ class PortfolioSpec:
 
 
 SpecInput = Union[Dict, PortfolioSpec]
+
+
+def _data_ok(df: pd.DataFrame) -> bool:
+    if not isinstance(df.index, pd.DatetimeIndex):
+        return False
+    if not df.index.is_monotonic_increasing:
+        return False
+    if df.index.duplicated().any():
+        return False
+    if "close" not in df.columns:
+        return False
+    if df["close"].isna().any():
+        return False
+    return True
 
 
 def run_portfolio(
@@ -42,6 +57,7 @@ def run_portfolio(
 
     curves: List[pd.Series] = []
     weights: List[float] = []
+    skipped: List[str] = []
 
     for spec in specs:
         if isinstance(spec, PortfolioSpec):
@@ -60,6 +76,11 @@ def run_portfolio(
             name = spec.get("name", strategy_key)
 
         data = pd.read_csv(csv_path, parse_dates=[0], index_col=0)
+        data = ensure_datetime_index(data)
+        data = standardize_columns(data)
+        if not _data_ok(data):
+            skipped.append(name)
+            continue
         factory = factories[strategy_key]
         strategy = factory(params)
         result: RunResult = run_backtest(
@@ -79,7 +100,9 @@ def run_portfolio(
         weights.append(weight)
 
     if not curves:
-        return pd.Series(dtype=float)
+        empty = pd.Series(dtype=float, name="portfolio")
+        empty.attrs["skipped"] = skipped
+        return empty
 
     combined = pd.concat(curves, axis=1).sort_index()
     combined = combined.ffill().bfill()
@@ -91,4 +114,5 @@ def run_portfolio(
 
     portfolio_curve = (combined * weights_arr).sum(axis=1)
     portfolio_curve.name = "portfolio"
+    portfolio_curve.attrs["skipped"] = skipped
     return portfolio_curve
