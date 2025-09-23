@@ -1,0 +1,37 @@
+name: ui
+on: [push, pull_request]
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('ui/package.json') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20.11.1', cache: 'npm', cache-dependency-path: 'ui/package-lock.json' }
+
+      - name: Install mock + ui deps
+        run: |
+          cd tools/mock-server && npm i
+          cd ../../ui && npm ci || npm i
+
+      - name: Start mock server
+        run: |
+          cd tools/mock-server && npm start & echo $! > .mock.pid
+      - name: Unit tests
+        run: cd ui && npm run test:unit
+
+      - name: Build
+        run: cd ui && npm run build
+
+      - name: Playwright (install browser deps)
+        run: cd ui && npx playwright install --with-deps
+
+      - name: E2E
+        run: cd ui && npm run test:e2e
+
+      - name: Lighthouse CI
+        run: cd ui && npx lhci autorun
+
+      - name: Stop mock
+        if: always()
+        run: kill $(cat tools/mock-server/.mock.pid) || true

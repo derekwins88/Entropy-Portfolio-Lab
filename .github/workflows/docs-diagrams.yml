@@ -20,11 +20,25 @@ jobs:
           npx playwright install --with-deps chromium
 
       - name: Render Mermaid blocks from docs/system_diagram.md
-        run: |
-          NODE_PATH=$(npm root -g) node docs-diagrams/render.mjs docs/system_diagram.md
+        run: bash .github/scripts/render_mermaid.sh docs/system_diagram.md
 
       - name: Upload diagram artifacts
         uses: actions/upload-artifact@v4
         with:
           name: system-diagram
           path: docs-diagrams/out/*.png
+
+      - name: Auto-commit rendered diagrams
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [[ -n "$(git status --porcelain docs-diagrams/out)" ]]; then
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add docs-diagrams/out
+            git commit -m "docs(diagrams): auto-update rendered images"
+            git push
+          else
+            echo "No diagram changes."
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
