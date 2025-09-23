@@ -1,0 +1,39 @@
+{
+  "project": "Entropy Portfolio Lab",
+  "roadmap": {
+    "doc": "roadmap/Road.pdf",
+    "phases": [
+      "Backtest Engine",
+      "Portfolio-Aware Entropy Sizer",
+      "Strategy Layer (Aethelred’s Aegis)",
+      "Quantum Optimizer (future)"
+    ]
+  },
+  "python": {
+    "engine": "backtest/engine.py",
+    "portfolio": "backtest/portfolio.py",
+    "metrics": "backtest/metrics.py",
+    "tests": [
+      "backtest/tests/test_engine.py",
+      "backtest/tests/test_flips.py"
+    ],
+    "source_doc": "backtest/Back test z.pdf"
+  },
+  "csharp": {
+    "sizer": "csharp/MultiAssetPortfolioSizer.cs",
+    "strategy": "csharp/AethelredAegis.cs",
+    "alignment": "Mirror entropy thresholds & risk knobs between Python and C#."
+  },
+  "strategies": [
+    {
+      "name": "Aethelred’s Aegis",
+      "type": "Entropy Regime Strategy",
+      "modules": [
+        "Entropy Sizer",
+        "Conviction Engine",
+        "Multi-timeframe Confirmer"
+      ],
+      "target": "NinjaTrader live trading"
+    }
+  ]
+}
