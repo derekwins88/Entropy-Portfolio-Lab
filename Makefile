@@ -52,8 +52,7 @@ ui-test:
 ## Docs (Mermaid)
 .PHONY: diagram
 diagram:
-	npm -g i @mermaid-js/mermaid-cli@10.9.0 || true
-	bash .github/scripts/render_mermaid.sh
+	bash .github/scripts/render_mermaid.sh docs/system_diagram.md
 
 .PHONY: docs
 docs: diagram
