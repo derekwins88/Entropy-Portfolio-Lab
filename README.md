@@ -80,16 +80,19 @@ df = pd.read_csv("data/AAPL.csv", parse_dates=[0], index_col=0)
 
 Placeholder CSVs are provided under `data/`. CI validates schema automatically.
 
-### CSV schema (multi-asset)
+### CSV schema (single-asset)
 
-| Column                                 | Type        | Notes                                      |
-|----------------------------------------|-------------|--------------------------------------------|
-| `DATE`                                  | ISO 8601    | e.g. `2024-01-02`                          |
-| `<SYM>_Open` / `_High` / `_Low` / `_Close` | number   | One set per symbol (e.g., `SPY_Close`)     |
-| `<SYM>_Volume`                          | integer     | Optional, used by some strategies          |
+| column   | type    | notes                                   |
+|----------|---------|-----------------------------------------|
+| datetime | ISO8601 | e.g., `2020-01-02T00:00:00Z`             |
+| open     | float   |                                         |
+| high     | float   |                                         |
+| low      | float   |                                         |
+| close    | float   |                                         |
+| volume   | integer | units or shares                         |
 
-> Example header for 2 symbols (SPY, QQQ):  
-> `DATE,SPY_Open,SPY_High,SPY_Low,SPY_Close,SPY_Volume,QQQ_Open,QQQ_High,QQQ_Low,QQQ_Close,QQQ_Volume`
+**Wide (multi-asset) schema supported by validator**  
+`date|datetime, <SYM>_open, <SYM>_high, <SYM>_low, <SYM>_close, <SYM>_volume`
 
 ---
 
