@@ -55,6 +55,32 @@ df = pd.read_csv("data/AAPL.csv", parse_dates=[0], index_col=0)
 
 ---
 
+## Demo Data
+
+Placeholder CSVs are provided under `data/`. CI validates schema automatically.
+
+**CSV schema (wide OHLCV by symbol):**
+
+| DATE (ISO8601) | <SYM>_Open | <SYM>_High | <SYM>_Low | <SYM>_Close | <SYM>_Volume |
+|----------------|------------|------------|-----------|-------------|--------------|
+| 2023-01-03     | 381.1      | 384.5      | 379.8     | 383.2       | 73521234     |
+
+---
+
+## Quick Commands
+
+Run a reproducible backtest (deterministic seed):
+
+```bash
+python -m backtest.cli run \
+  --strategy sma_cross \
+  --csv data/sample_multi_asset_data.csv \
+  --out-csv equity.csv \
+  --seed 42
+```
+
+---
+
 ## Quick Start (C# / NinjaTrader)
 
 Place the following under `csharp/`:
