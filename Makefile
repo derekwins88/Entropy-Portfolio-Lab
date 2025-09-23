@@ -1,21 +1,63 @@
-SHELL := bash
+SHELL := /usr/bin/bash
+PY := python3
+UI := ui
+MOCK := tools/mock-server
 
-.PHONY: dev ui mock test fmt type cov diagram
-dev: mock ui
+.PHONY: help
+help:
+	@echo "Targets: test, py, ui, ui-test, ui-build, ui-serve, diagram, docs, clean"
+
+## Python
+.PHONY: py
+py:
+	$(PY) -m pip install -U pip
+	pip install -r requirements.txt
+	pytest -q backtest/tests
+
+.PHONY: test
+test: py ui-test
+
+## UI
+.PHONY: ui
 ui:
-	cd ui && cp -n .env.example .env || true && npm i && npm run dev
-mock:
-	cd tools/mock-server && npm i && npm start
-test:
-	pytest -q
-fmt:
-	ruff check backtest --fix && black backtest
-type:
-	mypy backtest
-cov:
-	pytest -q --cov=backtest --cov-report=term-missing
+	cd $(MOCK) && npm i
+	cd $(UI) && npm ci || npm i
+	-@kill $$(cat $(MOCK)/.mock.pid) 2>/dev/null || true
+	cd $(MOCK) && (node server.mjs & echo $$! > .mock.pid)
+	sleep 1
+	cd $(UI) && npm run dev
 
+.PHONY: ui-build
+ui-build:
+	cd $(UI) && npm ci || npm i
+	cd $(UI) && npm run build
+
+.PHONY: ui-serve
+ui-serve:
+	cd $(UI) && npm run preview
+
+.PHONY: ui-test
+ui-test:
+	cd $(MOCK) && npm i
+	cd $(UI) && npm ci || npm i
+	-@kill $$(cat $(MOCK)/.mock.pid) 2>/dev/null || true
+	cd $(MOCK) && (node server.mjs & echo $$! > .mock.pid)
+	sleep 1
+	cd $(UI) && npm run test:unit
+	cd $(UI) && npx playwright install --with-deps
+	cd $(UI) && npm run build
+	cd $(UI) && npm run test:e2e
+	-@kill $$(cat $(MOCK)/.mock.pid) 2>/dev/null || true
+
+## Docs (Mermaid)
 .PHONY: diagram
 diagram:
-	@NODE_PATH=$(npm root -g 2>/dev/null) node docs-diagrams/render.mjs docs/system_diagram.md
-	@echo "PNG(s) in docs-diagrams/out/"
+	npm -g i @mermaid-js/mermaid-cli@10.9.0 || true
+	bash .github/scripts/render_mermaid.sh
+
+.PHONY: docs
+docs: diagram
+
+.PHONY: clean
+clean:
+	rm -rf docs-diagrams/out $(MOCK)/.mock.pid

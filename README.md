@@ -195,3 +195,23 @@ See [docs/phase2.md](docs/phase2.md) for optimization, walk-forward, attribution
   VITE_WS_URL=ws://localhost:8787
   ```
 - Copy `ui/.env.example` → `ui/.env` and adjust as needed.
+
+## Quick commands
+
+```bash
+# run all CI-equivalent checks locally
+make test
+
+# UI dev with mock data (opens Vite)
+make ui
+
+# build + e2e + Lighthouse
+make ui-build && make ui-test
+
+# regenerate docs diagrams from Mermaid blocks
+make diagram
+```
+
+Repro versions
+  • Node: cat .nvmrc → install with nvm use
+  • Python: 3.11.x (see requirements.txt)
