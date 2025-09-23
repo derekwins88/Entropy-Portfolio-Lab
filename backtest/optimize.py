@@ -63,6 +63,7 @@ def grid_search(
     *,
     run_kwargs: Optional[Dict] = None,
     score_key: str = "Sharpe_annualized",
+    bench: Optional[pd.Series] = None,
 ) -> pd.DataFrame:
     """Evaluate a parameter grid and rank by *score_key*."""
 
@@ -71,11 +72,24 @@ def grid_search(
     frame = frame.sort_index()
 
     run_kwargs = dict(run_kwargs or {})
+    bench_series: Optional[pd.Series] = None
+    if bench is not None:
+        bench_series = pd.Series(bench).copy()
+        bench_series.index = pd.to_datetime(bench_series.index)
+        bench_series = bench_series.sort_index()
     rows = []
     for params in _param_product(grid):
         strategy = strategy_factory(dict(params))
         result = run_backtest(frame, strategy, **run_kwargs)
-        stats = summarize(result.equity_curve, result.fills, result.trade_log)
+        bench_slice = None
+        if bench_series is not None:
+            bench_slice = bench_series.reindex(result.equity_curve.index).ffill()
+        stats = summarize(
+            result.equity_curve,
+            result.fills,
+            result.trade_log,
+            bench=bench_slice,
+        )
         score = _coerce_score(stats.get(score_key))
         rows.append({"params": params, "score": score, **stats})
 
@@ -95,6 +109,7 @@ def walk_forward(
     step_years: int = 1,
     run_kwargs: Optional[Dict] = None,
     score_key: str = "Sharpe_annualized",
+    bench: Optional[pd.Series] = None,
 ) -> pd.DataFrame:
     """Anchored walk-forward validation over yearly windows."""
 
@@ -103,6 +118,11 @@ def walk_forward(
     frame = frame.sort_index()
 
     run_kwargs = dict(run_kwargs or {})
+    bench_series: Optional[pd.Series] = None
+    if bench is not None:
+        bench_series = pd.Series(bench).copy()
+        bench_series.index = pd.to_datetime(bench_series.index)
+        bench_series = bench_series.sort_index()
     start = frame.index.min()
     end = frame.index.max()
     if pd.isna(start) or pd.isna(end):
@@ -124,7 +144,15 @@ def walk_forward(
         best_score = float("-inf")
         for params in _param_product(grid):
             result = run_backtest(train_slice, strategy_factory(dict(params)), **run_kwargs)
-            stats = summarize(result.equity_curve, result.fills, result.trade_log)
+            bench_train = None
+            if bench_series is not None:
+                bench_train = bench_series.reindex(result.equity_curve.index).ffill()
+            stats = summarize(
+                result.equity_curve,
+                result.fills,
+                result.trade_log,
+                bench=bench_train,
+            )
             score = _coerce_score(stats.get(score_key))
             if score > best_score:
                 best_score = score
@@ -134,7 +162,15 @@ def walk_forward(
             break
 
         evaluation = run_backtest(test_slice, strategy_factory(dict(best_params)), **run_kwargs)
-        oos_stats = summarize(evaluation.equity_curve, evaluation.fills, evaluation.trade_log)
+        bench_oos = None
+        if bench_series is not None:
+            bench_oos = bench_series.reindex(evaluation.equity_curve.index).ffill()
+        oos_stats = summarize(
+            evaluation.equity_curve,
+            evaluation.fills,
+            evaluation.trade_log,
+            bench=bench_oos,
+        )
         splits.append(
             {
                 "train_start": train_slice.index[0],
