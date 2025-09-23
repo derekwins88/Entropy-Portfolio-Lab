@@ -1,5 +1,8 @@
 ![Paper Forward Test](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/forward-test.yml/badge.svg)
 [![CI](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci.yml/badge.svg)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci.yml)
+![Python CI](https://img.shields.io/github/actions/workflow/status/entropy-lab/Entropy-Portfolio-Lab/ci-python.yml?label=python)
+![UI CI](https://img.shields.io/github/actions/workflow/status/entropy-lab/Entropy-Portfolio-Lab/ui.yml?label=ui)
+![Proofs](https://img.shields.io/github/actions/workflow/status/entropy-lab/Entropy-Portfolio-Lab/ci-proof.yml?label=proofs)
 
 # Entropy Portfolio Lab
 

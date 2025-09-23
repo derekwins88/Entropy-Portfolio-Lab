@@ -1,0 +1,32 @@
+name: docs-diagrams
+on:
+  push: { branches: [ main, master ] }
+  pull_request: {}
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Install mermaid-cli
+        run: npm i -g @mermaid-js/mermaid-cli@10
+      - name: Render Mermaid blocks from docs/system_diagram.md
+        run: |
+          mkdir -p docs/assets
+          # Extract code fences and render them in order
+          awk '/```mermaid/{flag=1; next} /```/{flag=0} flag' docs/system_diagram.md > /tmp/diagrams.mmd
+          # Split into individual diagrams separated by blank lines
+          csplit -sz /tmp/diagrams.mmd '/^$/' '{*}' || true
+          i=0
+          for f in xx*; do
+            outp="docs/assets/diagram_$i"
+            mmdc -i "$f" -o "${outp}.png" -b transparent
+            mmdc -i "$f" -o "${outp}.svg" -b transparent
+            i=$((i+1))
+          done
+      - name: Upload diagram artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-diagrams
+          path: docs/assets

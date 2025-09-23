@@ -112,3 +112,5 @@ Notes
 ---
 
 You drop these files in, and anyone skimming your repo can see the head and the spine at once. It also makes your third-party review read like “uh-huh yep” instead of “what is this mysterious folder called proofs.”
+
+> Rendered images: see `docs/assets/diagram_0.{png,svg}`, `diagram_1.{png,svg}` (CI-generated).
