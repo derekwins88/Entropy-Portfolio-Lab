@@ -6,35 +6,36 @@ They show the whole stack and the lifecycle of a typical backtest → proof → 
 ## 1) Architecture (components & data flow)
 
 ```mermaid
+%%{init: { "theme": "dark", "logLevel": "fatal" }}%%
 flowchart TD
-  %% --- Frontend & mock IO ---
-  UI[UI (Vite/React)]:::svc
-  MOCK[(Mock API + WS)]:::svc
-  UI -- REST: /api/* --> MOCK
-  UI -- WS: live capsules --> MOCK
 
-  %% --- Python backtest/analytics ---
-  subgraph PY[Backtest & Analytics (Python)]:::svc
-    BT[Backtest Engine]:::svc
-    OPT[Optimizer (Grid / Walk-Forward)]:::svc
-    MET[Attribution / Metrics]:::svc
-    DATA[(CSV / Parquet store)]:::store
-    OPT --> BT --> MET
-    DATA --> BT
-  end
+UI["UI (Vite/React)"]:::svc
+Mock["Mock API/WS (Express+WS)"]:::svc
+BT["Backtest Engine (Python)"]:::core
+Attr["Attribution (by_symbol / regime)"]:::core
+Proofs["Proofs (grid cert)"]:::proof
+NT8["NinjaTrader 8 Strategy + Sizer"]:::ext
+Store["Artifacts (CSV, PNG, cert)"]:::store
 
-  %% --- Proofs & NT8 ---
-  PROOF[Proof Generator]:::svc
-  NT8[NinjaTrader Strategy + Portfolio Sizer]:::svc
-  NT8 -. telemetry .-> MOCK
-  PROOF --> UI
+UI --- Mock
+Mock --> BT
+BT --> Attr
+BT --> Store
+Attr --> UI
+Proofs --> Store
+UI --> NT8
 
-  %% --- Dev wiring ---
-  MOCK <-. dev loop .-> PY
+classDef svc  fill:#0ea5e9,stroke:#0369a1,color:#fff,rx:4,ry:4
+classDef core fill:#22c55e,stroke:#15803d,color:#081c15,rx:4,ry:4
+classDef proof fill:#f59e0b,stroke:#92400e,color:#111827,rx:4,ry:4
+classDef ext  fill:#d946ef,stroke:#86198f,color:#fff,rx:4,ry:4
+classDef store fill:#94a3b8,stroke:#334155,color:#0f172a,rx:4,ry:4
 
-  %% --- Styling ---
-  classDef svc fill:#0b6,stroke:#064e3b,color:#fff;
-  classDef store fill:#334155,stroke:#0ea5e9,color:#fff;
+class UI,Mock svc
+class BT,Attr core
+class Proofs proof
+class NT8 ext
+class Store store
 ```
 
 ## 2) Lifecycle (single backtest → proof → UI)
