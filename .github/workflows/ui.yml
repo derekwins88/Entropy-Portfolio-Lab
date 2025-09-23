@@ -1,0 +1,72 @@
+name: UI
+
+on:
+  push:
+    paths:
+      - 'ui/**'
+      - '.github/workflows/ui.yml'
+  pull_request:
+    paths:
+      - 'ui/**'
+      - '.github/workflows/ui.yml'
+
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node (cache if lockfile present)
+        if: ${{ hashFiles('ui/package-lock.json','ui/pnpm-lock.yaml','ui/yarn.lock') != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            ui/package-lock.json
+            ui/pnpm-lock.yaml
+            ui/yarn.lock
+
+      - name: Setup Node (no cache fallback)
+        if: ${{ hashFiles('ui/package-lock.json','ui/pnpm-lock.yaml','ui/yarn.lock') == '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps (auto-detect PM)
+        working-directory: ui
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            corepack enable
+            pnpm i --frozen-lockfile
+          elif [ -f yarn.lock ]; then
+            corepack enable
+            yarn install --frozen-lockfile
+          elif [ -f package-lock.json ]; then
+            npm ci
+          else
+            echo "No lockfile found; using npm install (no cache)." >&2
+            npm install
+          fi
+
+      - name: Typecheck & Lint
+        working-directory: ui
+        run: |
+          if [ -f pnpm-lock.yaml ]; then pnpm run typecheck && pnpm run lint;
+          elif [ -f yarn.lock ]; then yarn typecheck && yarn lint;
+          else npm run typecheck && npm run lint; fi
+
+      - name: Unit tests
+        working-directory: ui
+        run: |
+          if [ -f pnpm-lock.yaml ]; then pnpm test -- --run;
+          elif [ -f yarn.lock ]; then yarn test --run;
+          else npm test -- --run; fi
+
+      - name: Build
+        working-directory: ui
+        run: |
+          if [ -f pnpm-lock.yaml ]; then pnpm build;
+          elif [ -f yarn.lock ]; then yarn build;
+          else npm run build; fi
