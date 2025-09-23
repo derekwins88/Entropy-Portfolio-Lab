@@ -6,58 +6,35 @@ They show the whole stack and the lifecycle of a typical backtest → proof → 
 ## 1) Architecture (components & data flow)
 
 ```mermaid
-flowchart LR
-    subgraph Data["Data Sources"]
-      CSV[(OHLCV CSVs)] --- Bench[(Benchmarks)]
-      Feeds[(Live Feeds)]:::dim
-    end
+flowchart TD
+  %% --- Frontend & mock IO ---
+  UI[UI (Vite/React)]:::svc
+  MOCK[(Mock API + WS)]:::svc
+  UI -- REST: /api/* --> MOCK
+  UI -- WS: live capsules --> MOCK
 
-    subgraph Backtest["Python: Backtesting & Analytics"]
-      Engine[Engine\n(brackets, sizing, walk-forward)] --- Portfolio[Portfolio Runner]
-      Metrics[Metrics Suite\nSharpe/Sortino/Calmar/Martin/Omega/\nVaR/CVaR/Alpha/Beta/IR/Ulcer/Time-in-Mkt/Turnover] --- Attribution
-      Attribution[Attribution]
-      Optimize[Grid Search\n+ Sensitivity] --- WalkFwd[Anchored Walk-Forward\n+ Monte Carlo]:::dim
-      Engine --> Metrics --> Attribution
-      Engine --> Optimize --> WalkFwd
-      Portfolio --> Metrics
-    end
+  %% --- Python backtest/analytics ---
+  subgraph PY[Backtest & Analytics (Python)]:::svc
+    BT[Backtest Engine]:::svc
+    OPT[Optimizer (Grid / Walk-Forward)]:::svc
+    MET[Attribution / Metrics]:::svc
+    DATA[(CSV / Parquet store)]:::store
+    OPT --> BT --> MET
+    DATA --> BT
+  end
 
-    subgraph Proofs["Proof Capsules (Lean4)"]
-      GenCert[gen_grid_cert.py\n(build claims)] --> Lean[Lean4 build\n(lake build, sorry-check)]
-      Capsules[(Capsules: JSON+Lean)] --- Artifacts[(Artifacts: logs, hashes)]
-    end
+  %% --- Proofs & NT8 ---
+  PROOF[Proof Generator]:::svc
+  NT8[NinjaTrader Strategy + Portfolio Sizer]:::svc
+  NT8 -. telemetry .-> MOCK
+  PROOF --> UI
 
-    subgraph UI["React/Vite Dashboard"]
-      WSClient[WS client\n(heartbeats/capsules)] --- Views[Heatmap / Correlation / Equity / Drawdown / Proof Viewer]
-      RESTClient[REST client\n(backtest listings/results)]
-    end
+  %% --- Dev wiring ---
+  MOCK <-. dev loop .-> PY
 
-    subgraph Tools["Dev Tools"]
-      Mock[Mock REST+WS\n(tools/mock-server)]
-      Scripts[dev.sh / fetch_data.py]
-    end
-
-    subgraph CI["GitHub Actions"]
-      CI_Py[ci-python.yml\n(pytest, schema check, coverage)] --- CI_UI[ci-ui.yml\n(typecheck, test, build)]
-      CI_Proof[ci-proof.yml\n(generate & build proofs)] --- Nightly[nightly.yml\n(backtest matrix → artifacts)]:::dim
-      CI_Py --> Artifacts
-      CI_UI --> Artifacts
-      CI_Proof --> Capsules
-    end
-
-    Data --> Engine
-    Feeds -. live .-> WSClient
-    CSV --> Portfolio
-    Bench --> Metrics
-    Engine -->|equity/fills/metrics| RESTClient
-    Optimize --> GenCert
-    WalkFwd --> GenCert
-    Metrics --> GenCert
-    Capsules --> Views
-    Mock --> WSClient
-    Mock --> RESTClient
-
-    classDef dim fill:#161b22,stroke:#2b3442,color:#8aa1b6
+  %% --- Styling ---
+  classDef svc fill:#0b6,stroke:#064e3b,color:#fff;
+  classDef store fill:#334155,stroke:#0ea5e9,color:#fff;
 ```
 
 ## 2) Lifecycle (single backtest → proof → UI)
