@@ -1,4 +1,5 @@
 """Performance metrics for backtest runs."""
+
 from __future__ import annotations
 
 import math
@@ -12,11 +13,23 @@ from .data import infer_periods_per_year, rolling_drawdown
 SeriesLike = Union[pd.Series, pd.DataFrame]
 
 
+def _capture_ratio(strat: pd.Series, bench: pd.Series) -> float:
+    if strat.empty or bench.empty:
+        return float("nan")
+    strat_total = float(np.prod(1.0 + strat) - 1.0)
+    bench_total = float(np.prod(1.0 + bench) - 1.0)
+    if bench_total == 0:
+        return float("nan")
+    return strat_total / bench_total
+
+
 def _as_series(curve: SeriesLike) -> pd.Series:
     if isinstance(curve, pd.DataFrame):
         if curve.shape[1] == 1:
             return curve.iloc[:, 0]
-        raise ValueError("Expected a Series or single-column DataFrame for equity curve")
+        raise ValueError(
+            "Expected a Series or single-column DataFrame for equity curve"
+        )
     return curve.astype(float)
 
 
@@ -66,7 +79,11 @@ def summarize(
         "End": float(equity.iloc[-1]),
         "TotalReturn": float(equity.iloc[-1] / equity.iloc[0] - 1.0),
         "CAGR": float(_annualized_return(equity, periods_per_year)),
-        "Volatility_annualized": float(returns.std() * math.sqrt(periods_per_year)) if not returns.empty else 0.0,
+        "Volatility_annualized": (
+            float(returns.std() * math.sqrt(periods_per_year))
+            if not returns.empty
+            else 0.0
+        ),
     }
 
     sharpe = _sharpe_ratio(returns) if not returns.empty else 0.0
@@ -74,11 +91,17 @@ def summarize(
     stats["Sharpe_annualized"] = float(sharpe * math.sqrt(periods_per_year))
 
     sortino = _sortino_ratio(returns) if not returns.empty else np.inf
-    stats["Sortino_annualized"] = float(sortino * math.sqrt(periods_per_year) if np.isfinite(sortino) else np.inf)
+    stats["Sortino_annualized"] = float(
+        sortino * math.sqrt(periods_per_year) if np.isfinite(sortino) else np.inf
+    )
 
     dd = rolling_drawdown(equity)
     stats["MaxDrawdown"] = float(dd.min())
-    stats["Calmar"] = float(stats["CAGR"] / abs(stats["MaxDrawdown"]) if stats["MaxDrawdown"] < 0 else np.nan)
+    stats["Calmar"] = float(
+        stats["CAGR"] / abs(stats["MaxDrawdown"])
+        if stats["MaxDrawdown"] < 0
+        else np.nan
+    )
 
     if not returns.empty:
         threshold = 0.0
@@ -97,25 +120,55 @@ def summarize(
     # Benchmarked stats -------------------------------------------------
     if bench is not None:
         bench_series = _as_series(bench).reindex(equity.index).ffill().dropna()
-        bench_returns = bench_series.pct_change().dropna()
-        aligned = returns.reindex(bench_returns.index).dropna()
-        bench_aligned = bench_returns.reindex(aligned.index)
-        if not aligned.empty and bench_aligned.var() > 0:
+        bench_returns = bench_series.pct_change()
+        aligned, bench_aligned = returns.align(bench_returns, join="inner")
+        aligned = aligned.dropna()
+        bench_aligned = bench_aligned.dropna()
+        if not bench_aligned.empty:
+            aligned = aligned.reindex(bench_aligned.index).dropna()
+            bench_aligned = bench_aligned.reindex(aligned.index)
+        if not aligned.empty and not bench_aligned.empty and bench_aligned.var() > 0:
             covariance = np.cov(aligned, bench_aligned)[0, 1]
             beta = covariance / bench_aligned.var()
             stats["Beta"] = float(beta)
 
             strat_ann = _annualized_return((1 + aligned).cumprod(), periods_per_year)
-            bench_ann = _annualized_return((1 + bench_aligned).cumprod(), periods_per_year)
+            bench_ann = _annualized_return(
+                (1 + bench_aligned).cumprod(), periods_per_year
+            )
             stats["Alpha"] = float(strat_ann - beta * bench_ann)
 
             diff = aligned - bench_aligned
-            tracking_error = diff.std() * math.sqrt(periods_per_year)
-            stats["InformationRatio"] = float((aligned.mean() - bench_aligned.mean()) * math.sqrt(periods_per_year) / tracking_error) if tracking_error > 0 else np.nan
+            tracking_error = float(diff.std() * math.sqrt(periods_per_year))
+            stats["TrackingError"] = tracking_error if tracking_error > 0 else 0.0
+            if tracking_error > 0:
+                stats["InformationRatio"] = float(
+                    (aligned.mean() - bench_aligned.mean())
+                    * math.sqrt(periods_per_year)
+                    / tracking_error
+                )
+            else:
+                stats["InformationRatio"] = np.nan
+
+            up_mask = bench_aligned > 0
+            down_mask = bench_aligned < 0
+            stats["UpCapture"] = (
+                float(_capture_ratio(aligned[up_mask], bench_aligned[up_mask]))
+                if up_mask.any()
+                else np.nan
+            )
+            stats["DownCapture"] = (
+                float(_capture_ratio(aligned[down_mask], bench_aligned[down_mask]))
+                if down_mask.any()
+                else np.nan
+            )
         else:
             stats["Beta"] = np.nan
             stats["Alpha"] = np.nan
             stats["InformationRatio"] = np.nan
+            stats["TrackingError"] = np.nan
+            stats["UpCapture"] = np.nan
+            stats["DownCapture"] = np.nan
 
     # Trade diagnostics --------------------------------------------------
     trades_df: Optional[pd.DataFrame] = None
@@ -128,13 +181,17 @@ def summarize(
         wins = trades_df[trades_df["pnl"] > 0]
         losses = trades_df[trades_df["pnl"] < 0]
         stats["Trades"] = float(len(trades_df))
-        stats["WinRate"] = float(len(wins) / len(trades_df)) if len(trades_df) else np.nan
+        stats["WinRate"] = (
+            float(len(wins) / len(trades_df)) if len(trades_df) else np.nan
+        )
         stats["AvgTrade"] = float(trades_df["pnl"].mean())
         stats["AvgWin"] = float(wins["pnl"].mean()) if not wins.empty else 0.0
         stats["AvgLoss"] = float(losses["pnl"].mean()) if not losses.empty else 0.0
         gross_win = wins["pnl"].sum()
         gross_loss = losses["pnl"].sum()
-        stats["ProfitFactor"] = float(gross_win / abs(gross_loss)) if gross_loss != 0 else np.inf
+        stats["ProfitFactor"] = (
+            float(gross_win / abs(gross_loss)) if gross_loss != 0 else np.inf
+        )
     else:
         stats["Trades"] = 0.0
         stats["WinRate"] = np.nan
