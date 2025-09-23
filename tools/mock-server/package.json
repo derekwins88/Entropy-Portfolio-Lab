@@ -1,0 +1,13 @@
+{
+  "name": "mock-api-ws",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0",
+    "cors": "^2.8.5"
+  }
+}

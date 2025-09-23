@@ -1,21 +1,10 @@
 [
-  {
-    "name": "AAPL",
-    "csv": "backtest/samples/AAPL.csv",
-    "strategy": "backtest.strategies.rsi_ema:RSIEmaMeanRevert",
-    "params": {
-      "rsi_length": 14,
-      "ema_length": 50,
-      "lower": 30,
-      "upper": 70
-    },
-    "mode": "delta",
-    "size_notional": 10000,
-    "risk_R": 1.0,
-    "atr_len": 14,
-    "risk_pct": 0.01,
-    "commission": 0.0,
-    "slippage": 0.0,
-    "expect_ohlc": true
-  }
+  {"name":"SPY","csv":"data/SPY.csv","strategy":"backtest.strategies.sma:SMACross","params":{"fast":10,"slow":40}},
+  {"name":"QQQ","csv":"data/QQQ.csv","strategy":"backtest.strategies.sma:SMACross","params":{"fast":10,"slow":40}},
+  {"name":"TLT","csv":"data/TLT.csv","strategy":"backtest.strategies.rsi_ema:RSIEmaMeanRevert","params":{"rsi_len":14,"ema_len":50}},
+  {"name":"GLD","csv":"data/GLD.csv","strategy":"backtest.strategies.rsi_ema:RSIEmaMeanRevert","params":{"rsi_len":14,"ema_len":50}},
+  {"name":"UUP","csv":"data/UUP.csv","strategy":"backtest.strategies.sma:SMACross","params":{"fast":20,"slow":80}},
+  {"name":"USO","csv":"data/USO.csv","strategy":"backtest.strategies.rsi_ema:RSIEmaMeanRevert","params":{"rsi_len":10,"ema_len":30}},
+  {"name":"UNG","csv":"data/UNG.csv","strategy":"backtest.strategies.rsi_ema:RSIEmaMeanRevert","params":{"rsi_len":10,"ema_len":30}},
+  {"name":"HYG","csv":"data/HYG.csv","strategy":"backtest.strategies.sma:SMACross","params":{"fast":20,"slow":80}}
 ]

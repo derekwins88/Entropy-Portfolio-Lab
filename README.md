@@ -176,3 +176,17 @@ Prints Alpha, Beta, Information Ratio, Up/Down Capture, and Tracking Error (beca
 ## Phase 2 — Advanced Analysis
 See [docs/phase2.md](docs/phase2.md) for optimization, walk-forward, attribution, and proof capsules.
 
+
+### Demo data & UI
+
+- Placeholder CSVs live in `data/*.csv` (header only). CI validates their schema.
+- Run the mock API/WS locally:
+  ```bash
+  cd tools/mock-server && npm i && npm start
+  ```
+- UI expects:
+  ```
+  VITE_API_URL=http://localhost:8787
+  VITE_WS_URL=ws://localhost:8787
+  ```
+- Copy `ui/.env.example` → `ui/.env` and adjust as needed.
