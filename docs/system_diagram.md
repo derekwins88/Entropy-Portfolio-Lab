@@ -1,0 +1,114 @@
+# System Diagram — Entropy Portfolio Lab
+
+Below are Mermaid diagrams you can view on GitHub (yes, it renders now).  
+They show the whole stack and the lifecycle of a typical backtest → proof → UI pipeline.
+
+## 1) Architecture (components & data flow)
+
+```mermaid
+flowchart LR
+    subgraph Data["Data Sources"]
+      CSV[(OHLCV CSVs)] --- Bench[(Benchmarks)]
+      Feeds[(Live Feeds)]:::dim
+    end
+
+    subgraph Backtest["Python: Backtesting & Analytics"]
+      Engine[Engine\n(brackets, sizing, walk-forward)] --- Portfolio[Portfolio Runner]
+      Metrics[Metrics Suite\nSharpe/Sortino/Calmar/Martin/Omega/\nVaR/CVaR/Alpha/Beta/IR/Ulcer/Time-in-Mkt/Turnover] --- Attribution[Attribution]
+      Optimize[Grid Search\n+ Sensitivity] --- WalkFwd[Anchored Walk-Forward\n+ Monte Carlo]:::dim
+      Engine --> Metrics --> Attribution
+      Engine --> Optimize --> WalkFwd
+      Portfolio --> Metrics
+    end
+
+    subgraph Proofs["Proof Capsules (Lean4)"]
+      GenCert[gen_grid_cert.py\n(build claims)] --> Lean[Lean4 build\n(lake build, sorry-check)]
+      Capsules[(Capsules: JSON+Lean)] --- Artifacts[(Artifacts: logs, hashes)]
+    end
+
+    subgraph UI["React/Vite Dashboard"]
+      WSClient[WS client\n(heartbeats/capsules)] --- Views[Heatmap / Correlation / Equity / Drawdown / Proof Viewer]
+      RESTClient[REST client\n(backtest listings/results)]
+    end
+
+    subgraph Tools["Dev Tools"]
+      Mock[Mock REST+WS\n(tools/mock-server)]
+      Scripts[dev.sh / fetch_data.py]
+    end
+
+    subgraph CI["GitHub Actions"]
+      CI_Py[ci-python.yml\n(pytest, schema check, coverage)] --- CI_UI[ci-ui.yml\n(typecheck, test, build)]
+      CI_Proof[ci-proof.yml\n(generate & build proofs)] --- Nightly[nightly.yml\n(backtest matrix → artifacts)]:::dim
+      CI_Py --> Artifacts
+      CI_UI --> Artifacts
+      CI_Proof --> Capsules
+    end
+
+    Data --> Engine
+    Feeds -. live .-> WSClient
+    CSV --> Portfolio
+    Bench --> Metrics
+    Engine -->|equity/fills/metrics| RESTClient
+    Optimize --> GenCert
+    WalkFwd --> GenCert
+    Metrics --> GenCert
+    Capsules --> Views
+    Mock --> WSClient
+    Mock --> RESTClient
+
+    classDef dim fill:#161b22,stroke:#2b3442,color:#8aa1b6
+```
+
+## 2) Lifecycle (single backtest → proof → UI)
+
+```mermaid
+sequenceDiagram
+  participant Dev as Dev/CI
+  participant CLI as backtest.cli
+  participant Eng as Engine/Portfolio
+  participant Mx as Metrics/Attribution
+  participant Pr as Proof Generator
+  participant L4 as Lean4
+  participant API as REST API (mock)
+  participant UI as React UI
+
+  Dev->>CLI: run --strategy ... [grid|walk]
+  CLI->>Eng: load CSV/bench, brackets, sizing
+  Eng-->>CLI: equity.csv, trades.csv
+  CLI->>Mx: summarize(equity, fills, trades, bench)
+  Mx-->>CLI: stats.json (Sharpe, DD, Alpha/Beta/IR,…)
+  CLI->>Pr: gen_grid_cert.py (claims from stats)
+  Pr->>L4: lake build / sorry-check
+  L4-->>Pr: proof status + artifacts
+  CLI->>API: POST results (equity, metrics)  (mocked)
+  API-->>UI: GET /backtests/:id/results
+  API-->>UI: WS capsules (entropy/risk/notes)
+  UI-->>Dev: dashboards render + proof status
+```
+
+Notes
+- OHLC-aware brackets: stops/targets evaluate intrabar High/Low if present, else Close.
+- Sizing: units, notional, or ATR-risk (risk_R × ATR, risk_pct of equity).
+- Proof capsules: JSON claims + Lean sources + SHA256; CI fails if claims aren’t met.
+
+---
+
+### Legend
+- *Engine* = event loop + broker + bracket manager (+ warmup)  
+- *Portfolio* = runs multiple assets, combines curves (equal-weight for now)  
+- *Metrics* = full suite (incl. Alpha/Beta/IR vs bench)  
+- *Optimize/Walk-Forward* = param search + OOS validation, optional Monte Carlo  
+- *Proofs* = claim generator → Lean build → artifacts (capsule)  
+- *UI* = React/Vite, hits REST for backtest results, WS for live capsules  
+- *CI* = Python tests/schema, UI checks/build, proof build (manual/triggered), nightly backtest matrix
+
+### Where to add things quickly
+- New strategy research ➜ `backtest/strategies/*`
+- New metric ➜ `backtest/metrics/*` and wire into summarize()
+- New UI panel ➜ `ui/src/components/*` then route in `/analytics`
+- New proof claim ➜ `proofs/gen_grid_cert.py` + `proofs/templates/*`
+- New nightly run ➜ `.github/workflows/nightly.yml` (matrix)
+
+---
+
+You drop these files in, and anyone skimming your repo can see the head and the spine at once. It also makes your third-party review read like “uh-huh yep” instead of “what is this mysterious folder called proofs.”

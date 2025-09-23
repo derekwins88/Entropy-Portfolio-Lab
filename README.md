@@ -13,6 +13,8 @@ This lab ties together:
 
 > Goal: keep research and live execution aligned via shared specifications and metrics.
 
+See **[docs/system_diagram.md](docs/system_diagram.md)** for architecture and flow diagrams.
+
 ---
 
 ## Quick Start (Python / Research)
