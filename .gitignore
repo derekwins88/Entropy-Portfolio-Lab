@@ -14,3 +14,16 @@ obj/
 # Notebooks & data
 *.ipynb_checkpoints/
 data/
+!data/
+!data/fetch_data.py
+!data/SPY.csv
+!data/QQQ.csv
+!data/TLT.csv
+!data/GLD.csv
+!data/UUP.csv
+!data/USO.csv
+!data/UNG.csv
+!data/HYG.csv
+!data/CL_cont.csv
+!data/NG_cont.csv
+!data/HG_cont.csv
