@@ -131,3 +131,22 @@ This ensures parity when you evolve knobs (entropy thresholds, sizing rules, bra
 ## License
 
 Choose what fits (MIT/BSD-3-Clause/Apache-2.0). Default: MIT.
+
+### Backtest Core — Quick sanity
+
+```bash
+# install deps
+python -m pip install --upgrade pip
+pip install pandas numpy matplotlib pytest
+
+# run tests
+pytest backtest/tests -q
+
+# run a flat strategy
+python -m backtest.cli run --csv backtest/samples/AAPL.csv \
+  --strategy backtest.strategies.flat:Flat --mode target
+
+# portfolio example (spec file)
+echo '[{"name":"AAPL","csv":"backtest/samples/AAPL.csv","strategy":"backtest.strategies.flat:Flat","params":{}}]' > port.json
+python -m backtest.cli portfolio --spec port.json --mode target
+```
