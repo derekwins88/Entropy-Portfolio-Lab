@@ -176,3 +176,7 @@ Prints Alpha, Beta, Information Ratio, Up/Down Capture, and Tracking Error (beca
 ## Phase 2 — Advanced Analysis
 See [docs/phase2.md](docs/phase2.md) for optimization, walk-forward, attribution, and proof capsules.
 
+
+
+## UI (Phase 3)
+See /ui for the React dashboard. Demo mode runs without a backend.

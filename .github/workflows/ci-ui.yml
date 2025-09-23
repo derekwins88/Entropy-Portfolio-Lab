@@ -1,0 +1,35 @@
+name: UI — build & test
+on:
+  push: { branches: [ main, master ] }
+  pull_request:
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm', cache-dependency-path: 'ui/package-lock.json' }
+      - name: Install
+        working-directory: ui
+        run: npm ci || npm i
+      - name: Typecheck & Lint
+        working-directory: ui
+        run: |
+          npm run typecheck
+          npm run lint
+      - name: Unit tests
+        working-directory: ui
+        run: npm test
+      - name: Build
+        working-directory: ui
+        run: npm run build
+      - name: Preview & E2E
+        working-directory: ui
+        run: npm run test:ui
+      - name: Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          configPath: ./ui/lhci.json
+          runs: 1
+          uploadArtifacts: true
+          temporaryPublicStorage: true
