@@ -21,8 +21,8 @@ jobs:
           i=0
           for f in xx*; do
             outp="docs/assets/diagram_$i"
-            mmdc -i "$f" -o "${outp}.png" -b transparent
-            mmdc -i "$f" -o "${outp}.svg" -b transparent
+            mmdc -i "$f" -o "${outp}.png" -b transparent -p .puppeteer.cjs
+            mmdc -i "$f" -o "${outp}.svg" -b transparent -p .puppeteer.cjs
             i=$((i+1))
           done
       - name: Upload diagram artifacts
