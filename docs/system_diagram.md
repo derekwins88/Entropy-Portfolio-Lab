@@ -14,7 +14,8 @@ flowchart LR
 
     subgraph Backtest["Python: Backtesting & Analytics"]
       Engine[Engine\n(brackets, sizing, walk-forward)] --- Portfolio[Portfolio Runner]
-      Metrics[Metrics Suite\nSharpe/Sortino/Calmar/Martin/Omega/\nVaR/CVaR/Alpha/Beta/IR/Ulcer/Time-in-Mkt/Turnover] --- Attribution[Attribution]
+      Metrics[Metrics Suite\nSharpe/Sortino/Calmar/Martin/Omega/\nVaR/CVaR/Alpha/Beta/IR/Ulcer/Time-in-Mkt/Turnover] --- Attribution
+      Attribution[Attribution]
       Optimize[Grid Search\n+ Sensitivity] --- WalkFwd[Anchored Walk-Forward\n+ Monte Carlo]:::dim
       Engine --> Metrics --> Attribution
       Engine --> Optimize --> WalkFwd
