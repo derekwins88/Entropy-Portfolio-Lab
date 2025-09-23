@@ -1,0 +1,21 @@
+[
+  {
+    "name": "AAPL",
+    "csv": "backtest/samples/AAPL.csv",
+    "strategy": "backtest.strategies.rsi_ema:RSIEmaMeanRevert",
+    "params": {
+      "rsi_length": 14,
+      "ema_length": 50,
+      "lower": 30,
+      "upper": 70
+    },
+    "mode": "delta",
+    "size_notional": 10000,
+    "risk_R": 1.0,
+    "atr_len": 14,
+    "risk_pct": 0.01,
+    "commission": 0.0,
+    "slippage": 0.0,
+    "expect_ohlc": true
+  }
+]
