@@ -1,0 +1,79 @@
+name: Paper Forward Test
+
+on:
+  schedule:
+    # Weekdays 4:05pm New York (tweak to your data timing)
+    - cron: "5 21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      spec:
+        description: "Override spec JSON or path (default: port.json)"
+        required: false
+        default: "port.json"
+
+permissions:
+  contents: write   # allow committing logs back to the repo
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy matplotlib pytest
+
+      # Optional: pull fresh CSVs from your storage. Keep it a no-op by default.
+      - name: Fetch latest data (optional)
+        run: |
+          if [ -x scripts/fetch_data.sh ]; then
+            bash scripts/fetch_data.sh
+          else
+            echo "No fetch script; using repo CSVs"
+          fi
+
+      - name: Run forward test
+        id: run
+        env:
+          SPEC_INPUT: ${{ github.event.inputs.spec }}
+        run: |
+          SPEC="${SPEC_INPUT:-port.json}"
+          echo "Using spec: $SPEC"
+          python -m forwardtest.runner --spec "$SPEC" --root forwardtest | tee forwardtest/summary.txt
+
+      - name: Summarize (job summary)
+        run: |
+          echo "## Forward Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          tail -n 50 forwardtest/summary.txt >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload logs (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-logs
+          path: forwardtest/
+
+      # Commit updated logs/state back to main. Safe no-op if nothing changed.
+      - name: Commit logs to repo
+        if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+        run: |
+          set -e
+          git config user.name  "paper-bot"
+          git config user.email "paper-bot@users.noreply.github.com"
+          git add forwardtest/*.json forwardtest/logs/*.csv || true
+          git add forwardtest/state.json || true
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+          else
+            git commit -m "chore(paper): update forward-test logs [skip ci]"
+            git push
+          fi
