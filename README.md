@@ -1,3 +1,4 @@
+![Paper Forward Test](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/forward-test.yml/badge.svg)
 [![CI](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci.yml/badge.svg)](https://github.com/entropy-lab/Entropy-Portfolio-Lab/actions/workflows/ci.yml)
 
 # Entropy Portfolio Lab
