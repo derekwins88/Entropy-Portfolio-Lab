@@ -47,6 +47,20 @@ This lab ties together:
 
 > CI now generates a tiny deterministic sample at `data/sample_multi_asset_data.csv` so the examples run out-of-the-box.
 
+## Data Pipeline
+
+Fetch live data using the included script:
+
+```bash
+python scripts/fetch_data.py --symbols AAPL SPY QQQ --interval 1d --output data/
+```
+
+> Requires `yfinance` (`pip install yfinance`).
+
+## Licensing
+
+Default: MIT. Consider dual-licensing (e.g., MIT + Commercial) for IP protection (e.g., proof capsules). Consult a lawyer if needed.
+
 ### Deterministic quick-run
 
 ```bash
