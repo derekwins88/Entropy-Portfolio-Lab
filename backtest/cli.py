@@ -11,6 +11,7 @@ from backtest.walkforward import (
 )
 from backtest.strategies import (
     flat_factory,
+    praetorian_factory,
     rsi_ema_factory,
     sma_factory,
     trinity_factory,
@@ -91,6 +92,7 @@ def _resolve_strategy_factory(name: str) -> Callable[[Dict[str, object]], object
         "rsi_ema": rsi_ema_factory,
         "rsi_ema_mean_revert": rsi_ema_factory,
         "trinity": trinity_factory,
+        "praetorian": praetorian_factory,
     }
     key = name.replace("-", "_").lower()
     if key not in mapping:
@@ -290,27 +292,73 @@ def wf_opt_cmd(
 
 
 @cli.command("wf")
-@click.option("--strategy", default="trinity")
+@click.option("--csv", "csv_path", required=True, help="Path to input CSV")
+@click.option("--strategy", required=True, help="Strategy name (e.g., sma_cross)")
+@click.option("--params", default="{}", help="JSON dictionary of strategy parameters")
+@click.option("--train-years", type=float, default=2.0)
+@click.option("--test-months", type=float, default=3.0)
+@click.option("--step-months", type=float, default=3.0)
+@click.option("--mode", type=click.Choice(["target", "delta"]), default="target")
+@click.option("--seed", type=int, default=42)
+@click.option("--out-json", default="wf_report.json")
+def wf_cmd(
+    csv_path,
+    strategy,
+    params,
+    train_years,
+    test_months,
+    step_months,
+    mode,
+    seed,
+    out_json,
+):
+    frame = _prepare_frame(_load_csv(csv_path))
+    factory = _resolve_strategy_factory(strategy)
+    params_dict = _parse_params(params)
+
+    report = walk_forward_report(
+        frame,
+        make_strategy=factory,
+        params=params_dict,
+        train_years=train_years,
+        test_months=test_months,
+        step_months=step_months,
+        seed=seed,
+        run_kwargs={"mode": mode},
+    )
+
+    out_path = Path(out_json)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(report, indent=2, sort_keys=True))
+    click.echo(f"[wf] wrote {out_path} with {report['fold_count']} folds")
+
+
+@cli.command("wf-sweep")
+@click.option(
+    "--strategy",
+    default="trinity",
+    type=click.Choice(["trinity", "praetorian"]),
+    show_default=True,
+)
 @click.option("--csv", "csv_path", required=True)
 @click.option("--grid", required=True, help="param grid: k=v1,v2 ...")
 @click.option("--mode", default="target", type=click.Choice(["target", "delta"]))
-@click.option("--train-days", default=500, type=int)
-@click.option("--test-days", default=125, type=int)
-@click.option("--out-csv", default="artifacts/wf_oos_returns.csv")
-def wf_cmd(strategy, csv_path, grid, mode, train_days, test_days, out_csv):
+@click.option("--train-days", default=500, type=int, show_default=True)
+@click.option("--test-days", default=125, type=int, show_default=True)
+@click.option("--out-csv", default="artifacts/wf_oos_returns.csv", show_default=True)
+def wf_sweep_cmd(strategy, csv_path, grid, mode, train_days, test_days, out_csv):
     """Anchored walk-forward sweep that logs out-of-sample returns."""
 
     import os
 
     os.makedirs(Path(out_csv).parent, exist_ok=True)
     key = strategy.replace("-", "_").lower()
-    if key != "trinity":
-        raise click.ClickException("wf: only 'trinity' strategy is supported")
+    strat_factory = trinity_factory if key == "trinity" else praetorian_factory
 
     run_wf_from_cli(
         csv_path=csv_path,
         grid=grid,
-        StrategyFactory=trinity_factory,
+        StrategyFactory=strat_factory,
         run_backtest=engine_run_backtest,
         mode=mode,
         train_days=train_days,
