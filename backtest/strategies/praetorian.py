@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from typing import Dict
 
+from backtest.indicators.patterns import nr7
+
 
 class ThePraetorianEngine:
     """
@@ -27,6 +29,8 @@ class ThePraetorianEngine:
             conviction_loss=0.50,
             min_conviction=0.50,
             max_conviction=1.75,
+            turbo=0,
+            nr7=0,
         )
         p.update(params or {})
         self.p = p
@@ -35,7 +39,16 @@ class ThePraetorianEngine:
 
     # ---- optional hooks picked up by the engine ----
     def get_effective_risk(self) -> float:
-        return float(self.p["base_risk_percent"] * self._conv)
+        base = float(self.p["base_risk_percent"] * self._conv)
+        if self.p.get("turbo"):
+            try:
+                ent = float(self._ind["entropy"].iloc[-1])
+            except Exception:
+                ent = float("nan")
+            threshold = float(self.p.get("entry_entropy_threshold", 0.0))
+            if np.isfinite(ent) and ent > 0 and threshold > 0 and ent <= 0.7 * threshold:
+                base *= 1.25
+        return base
 
     def on_trade_closed(self, pnl: float):
         if pnl > 0:
@@ -77,6 +90,7 @@ class ThePraetorianEngine:
             vwap=vwap,
             atr=atr,
             close=c,
+            nr7=nr7(h, l, 7).fillna(False),
         )
 
     def on_bar(self, t, row, i, broker) -> int:
@@ -96,6 +110,13 @@ class ThePraetorianEngine:
         price_ok = (c > bh1) and (ef > es)
         # Volume core
         volm_ok = (a14 == 0.0) or (abs(c - vw) <= self.p["vwap_max_distance_atr"] * a14)
+
+        if self.p.get("nr7"):
+            try:
+                if not bool(self._ind["nr7"].iat[i]):
+                    return 0
+            except Exception:
+                return 0
 
         # Momentum trailing exit: lose fast-EMA → flat
         if c < ef:

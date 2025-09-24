@@ -34,6 +34,7 @@ class Trade:
     exit_price: Optional[float] = None
     pnl: Optional[float] = None
     return_pct: Optional[float] = None
+    initial_risk: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -45,6 +46,7 @@ class Trade:
             "exit_price": self.exit_price,
             "pnl": self.pnl,
             "return_pct": self.return_pct,
+            "initial_risk": self.initial_risk,
         }
 
 
@@ -75,6 +77,7 @@ class Broker:
         self.fills: List[Dict[str, Any]] = []
         self.trade_log: List[Trade] = []
         self._open_trade: Optional[Trade] = None
+        self._pending_initial_risk: Optional[float] = None
 
     # ------------------------------------------------------------------
     # Market data plumbing
@@ -86,21 +89,41 @@ class Broker:
     # ------------------------------------------------------------------
     # Order routing helpers
     # ------------------------------------------------------------------
-    def order_delta(self, quantity_delta: float, price: float, timestamp: pd.Timestamp) -> None:
+    def order_delta(
+        self,
+        quantity_delta: float,
+        price: float,
+        timestamp: pd.Timestamp,
+        initial_risk: Optional[float] = None,
+    ) -> None:
         if quantity_delta:
-            self._execute(quantity_delta, price, timestamp)
+            self._execute(quantity_delta, price, timestamp, initial_risk)
 
-    def order_target(self, target_position: float, price: float, timestamp: pd.Timestamp) -> None:
+    def order_target(
+        self,
+        target_position: float,
+        price: float,
+        timestamp: pd.Timestamp,
+        initial_risk: Optional[float] = None,
+    ) -> None:
         delta = target_position - self.position
         if delta:
-            self._execute(delta, price, timestamp)
+            self._execute(delta, price, timestamp, initial_risk)
 
     # ------------------------------------------------------------------
     # Internal bookkeeping
     # ------------------------------------------------------------------
-    def _execute(self, quantity: float, price: float, timestamp: pd.Timestamp) -> None:
+    def _execute(
+        self,
+        quantity: float,
+        price: float,
+        timestamp: pd.Timestamp,
+        initial_risk: Optional[float] = None,
+    ) -> None:
         if quantity == 0:
             return
+
+        self._pending_initial_risk = initial_risk if initial_risk is not None else None
 
         direction = 1.0 if quantity > 0 else -1.0
         slip = price * self.slippage_bps / 10_000.0
@@ -138,6 +161,7 @@ class Broker:
 
         if self.position == 0:
             self.avg_price = 0.0
+        self._pending_initial_risk = None
 
     def _handle_opening(self, new_position: float, fill_price: float, timestamp: pd.Timestamp) -> None:
         if self.position == 0:
@@ -148,6 +172,7 @@ class Broker:
                 quantity=new_position,
                 entry_price=self.avg_price,
                 direction=direction,
+                initial_risk=self._pending_initial_risk,
             )
             self.trade_log.append(trade)
             self._open_trade = trade
@@ -203,9 +228,11 @@ class Broker:
                 quantity=new_position,
                 entry_price=self.avg_price,
                 direction=direction,
+                initial_risk=self._pending_initial_risk,
             )
             self.trade_log.append(trade)
             self._open_trade = trade
+        self._pending_initial_risk = None
 
     # ------------------------------------------------------------------
     # Export helpers
