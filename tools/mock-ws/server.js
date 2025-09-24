@@ -1,17 +1,28 @@
+// Minimal WS mock used by CI to let the UI connect.
+// Listens on MOCK_WS_PORT (default 8787)
 import { WebSocketServer } from 'ws';
 
-const PORT = Number(process.env.MOCK_WS_PORT || 8787);
+const PORT = parseInt(process.env.MOCK_WS_PORT || '8787', 10);
 const wss = new WebSocketServer({ port: PORT });
 
-// Simple echo/heartbeat mock so the UI can connect and tests can probe.
+function log(...args) {
+  console.log('[mock-ws]', ...args);
+}
+
+wss.on('listening', () => log(`listening on ws://127.0.0.1:${PORT}`));
+
 wss.on('connection', (ws) => {
-  ws.send(JSON.stringify({ type: 'hello', ts: Date.now() }));
-  ws.on('message', (msg) => {
-    ws.send(JSON.stringify({ type: 'echo', data: msg.toString() }));
+  log('client connected');
+  ws.send(JSON.stringify({ type: 'hello', t: Date.now() }));
+
+  ws.on('message', (raw) => {
+    let msg = raw.toString();
+    if (msg === 'ping') ws.send('pong');
   });
 });
 
-// Keep the process alive and log a single “ready” line for humans.
-console.log(`[mock-ws] listening on ws://127.0.0.1:${PORT}`);
-setInterval(() => {}, 1 << 30);
-
+// Broadcast a lightweight tick so the UI sees activity
+setInterval(() => {
+  const payload = JSON.stringify({ type: 'tick', t: Date.now() });
+  wss.clients.forEach((c) => c.readyState === 1 && c.send(payload));
+}, 1000);
