@@ -3,21 +3,25 @@ name: ci-ui
 on:
   push:
     branches: [ main ]
+    paths:
+      - "ui/**"
+      - ".github/workflows/ci-ui.yml"
   pull_request:
+    paths:
+      - "ui/**"
+      - ".github/workflows/ci-ui.yml"
 
 jobs:
   ui:
     name: UI / ui / test
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     env:
-      # Point the UI at the local mock server during CI
-      VITE_API_URL: http://127.0.0.1:8787
-      VITE_WS_URL:  ws://127.0.0.1:8787
+      # Keep one source of truth for mock WS port
+      MOCK_WS_PORT: 8787
 
     steps:
-      - name: Checkout
+      - name: Set up job
         uses: actions/checkout@v4
 
       - name: Setup Node
@@ -27,28 +31,19 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
-      # --- Minimal, self-contained WS mock for CI ---
-      - name: Start mock WS (background)
-        env:
-          MOCK_WS_PORT: 8787
+      - name: Install root tools (wait-on, concurrently)
         run: |
-          # Use a throwaway workspace; don't touch repo files
-          mkdir -p /tmp/mock-ws && cd /tmp/mock-ws
-          npm init -y >/dev/null 2>&1 || true
-          npm i --no-save ws@8 >/dev/null
-          node - <<'JS' &
-          const WebSocket = require('ws');
-          const port = parseInt(process.env.MOCK_WS_PORT || '8787', 10);
-          const wss = new WebSocket.Server({ host: '127.0.0.1', port });
-          wss.on('connection', ws => {
-            ws.on('message', m => ws.send(m.toString()));
-            ws.send('ready');
-          });
-          console.log('[mock-ws] listening on ws://127.0.0.1:' + port);
-          setInterval(() => {}, 1 << 30);
-          JS
+          npm i -g wait-on@7 concurrently@8
 
-      # --- UI build + preview ----------------------------------------------
+      - name: Install mock WS deps
+        working-directory: tools/mock-ws
+        run: npm ci
+
+      - name: Start mock WS (background)
+        working-directory: tools/mock-ws
+        run: |
+          npm start &
+
       - name: Install UI deps
         working-directory: ui
         run: npm ci
@@ -58,17 +53,19 @@ jobs:
         run: npm run build
 
       - name: Preview UI (background)
-        env:
-          VITE_API_URL: http://127.0.0.1:8787
-          VITE_WS_URL:  ws://127.0.0.1:8787
         working-directory: ui
+        env:
+          VITE_API_URL: http://127.0.0.1:${{ env.MOCK_WS_PORT }}
+          VITE_WS_URL: ws://127.0.0.1:${{ env.MOCK_WS_PORT }}
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 &
 
       - name: Wait for services
         env:
-          MOCK_WS_PORT: 8787
+          VITE_API_URL: http://127.0.0.1:${{ env.MOCK_WS_PORT }}
+          VITE_WS_URL: ws://127.0.0.1:${{ env.MOCK_WS_PORT }}
         run: |
+          # Wait for both the HTTP UI and WS mock endpoints (120s cap)
           npx --yes wait-on@7 \
             http://127.0.0.1:4173 \
             ws://127.0.0.1:${MOCK_WS_PORT} \
@@ -78,7 +75,6 @@ jobs:
         run: |
           curl -fsS http://127.0.0.1:4173 >/dev/null
 
-      # --- Playwright smoke -------------------------------------------------
       - name: Install Playwright (browsers + deps)
         run: npx playwright install --with-deps
 
@@ -87,7 +83,6 @@ jobs:
         run: |
           npx playwright test --reporter=list
 
-      # --- Optional: Lighthouse sanity (non-blocking) -----------------------
       - name: Lighthouse (informational)
         if: always()
         run: |
