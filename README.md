@@ -162,6 +162,15 @@ df = pd.read_csv("data/AAPL.csv", parse_dates=[0], index_col=0)
 # print(stats)
 ```
 
+### Cerberus Hyperion (turbo) — optimize & ADR
+
+```bash
+# run a tiny grid and print the best params + ADR (%/day)
+python -m backtest.optimize_hyperion --csv data/sample_multi_asset_data.csv --out-csv artifacts/hyperion_grid.csv --seed 42
+# smoke-test
+pytest -q backtest/tests/test_hyperion_smoke.py
+```
+
 ---
 
 ## Quick Start (C# / NinjaTrader)

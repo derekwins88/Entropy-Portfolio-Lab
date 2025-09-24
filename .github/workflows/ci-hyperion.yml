@@ -1,0 +1,28 @@
+name: hyperion-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lab-hyperion:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -U pip
+      - run: pip install -r requirements.txt
+      - run: pip install pytest
+      - run: pytest -q backtest/tests/test_hyperion_smoke.py
+      - name: Mini grid (deterministic)
+        run: |
+          python -m backtest.optimize_hyperion \
+            --csv data/sample_multi_asset_data.csv \
+            --out-csv artifacts/hyperion_grid.csv \
+            --seed 42
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hyperion-grid
+          path: artifacts/hyperion_grid.csv
