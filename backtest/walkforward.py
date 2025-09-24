@@ -4,18 +4,31 @@ from __future__ import annotations
 
 import itertools
 import math
-from dataclasses import dataclass
+import inspect
+from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
 from .core.data import ensure_datetime_index, rolling_drawdown, standardize_columns
-from .core.engine import run_backtest
+from .core.engine import RunResult, run_backtest
 from .core.metrics import summarize
 from .core.strategy import BarStrategy
 
 StrategyFactory = Callable[[Dict[str, Any]], BarStrategy]
+
+
+@dataclass
+class SimpleFoldResult:
+    """Serializable container for the lightweight walk-forward report."""
+
+    fold_id: int
+    train_start: str
+    train_end: str
+    test_start: str
+    test_end: str
+    metrics: Dict[str, Any]
 
 
 @dataclass
@@ -256,9 +269,164 @@ def walkforward_drawdown(equity: pd.Series) -> pd.Series:
     return rolling_drawdown(equity)
 
 
+def _coerce_metric_values(metrics: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in metrics.items():
+        if isinstance(value, (np.integer, np.floating, int, float)):
+            num = float(value)
+            out[key] = num if np.isfinite(num) else None
+        else:
+            out[key] = value
+    return out
+
+
+def _rolling_windows(
+    index: pd.DatetimeIndex,
+    train_window: pd.Timedelta,
+    test_window: pd.Timedelta,
+    step: pd.Timedelta,
+) -> List[tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]]:
+    if index.empty:
+        return []
+
+    start = index.min()
+    end = index.max()
+    windows: List[tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]] = []
+
+    current_train_end = start + train_window
+    while True:
+        test_start = current_train_end
+        test_end = test_start + test_window
+        if test_end > end:
+            break
+        windows.append((start, current_train_end, test_start, test_end))
+        current_train_end = current_train_end + step
+    return windows
+
+
+def _accepts_seed(fn: Callable[..., Any]) -> bool:
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):  # pragma: no cover - defensive guard
+        return False
+    return "seed" in params
+
+
+def walk_forward(
+    data: pd.DataFrame,
+    make_strategy: Callable[[Dict[str, Any]], BarStrategy],
+    params: Dict[str, Any],
+    *,
+    train_years: float = 2.0,
+    test_months: float = 3.0,
+    step_months: float = 3.0,
+    seed: int = 42,
+    metric_fn: Optional[Callable[[Any], Dict[str, Any]]] = None,
+    run_fn: Optional[Callable[..., RunResult]] = None,
+    run_kwargs: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Minimal expanding walk-forward helper used by the CLI."""
+
+    if seed is not None:
+        try:  # pragma: no cover - guard for environments without numpy/random
+            import random
+
+            random.seed(seed)
+            np.random.seed(seed)
+        except Exception:  # pragma: no cover - deterministic best effort
+            pass
+
+    if run_fn is None:
+        from .core.engine import run_backtest as run_fn
+
+    run_kwargs = dict(run_kwargs or {})
+
+    df = data.copy()
+    if not isinstance(df.index, pd.DatetimeIndex):
+        datetime_column = None
+        for candidate in ("datetime", "date", "DATE", "Date"):
+            if candidate in df.columns:
+                datetime_column = candidate
+                break
+        if datetime_column is not None:
+            df = df.copy()
+            df[datetime_column] = pd.to_datetime(df[datetime_column])
+            df = df.set_index(datetime_column)
+        else:
+            df = ensure_datetime_index(df)
+    else:
+        df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
+
+    train_window = pd.Timedelta(days=max(int(train_years * 365.25), 1))
+    test_window = pd.Timedelta(days=max(int(test_months * 30.4375), 1))
+    step_window = pd.Timedelta(days=max(int(step_months * 30.4375), 1))
+
+    windows = _rolling_windows(df.index, train_window, test_window, step_window)
+    fold_results: List[SimpleFoldResult] = []
+
+    for idx, (train_start, train_end, test_start, test_end) in enumerate(windows, start=1):
+        train_slice = df.loc[train_start:train_end]
+        test_slice = df.loc[test_start:test_end]
+        if train_slice.empty or test_slice.empty:
+            continue
+
+        strategy = make_strategy(dict(params))
+
+        call_kwargs = dict(run_kwargs)
+        if _accepts_seed(run_fn):
+            call_kwargs.setdefault("seed", seed)
+
+        result = run_fn(test_slice, strategy, **call_kwargs)
+
+        if metric_fn is None:
+            metrics = summarize(result.equity_curve, result.fills, result.trade_log)
+        else:
+            try:
+                metrics = metric_fn(result)
+            except TypeError:
+                metrics = metric_fn(getattr(result, "equity_curve", pd.Series(dtype=float)))
+
+        metrics = _coerce_metric_values(dict(metrics))
+
+        fold_results.append(
+            SimpleFoldResult(
+                fold_id=idx,
+                train_start=str(train_slice.index[0].date()),
+                train_end=str(train_slice.index[-1].date()),
+                test_start=str(test_slice.index[0].date()),
+                test_end=str(test_slice.index[-1].date()),
+                metrics=metrics,
+            )
+        )
+
+    aggregate: Dict[str, Any] = {}
+    if fold_results:
+        keys = sorted({key for fold in fold_results for key in fold.metrics})
+        for key in keys:
+            values = [fold.metrics.get(key) for fold in fold_results]
+            numeric = [
+                float(v)
+                for v in values
+                if isinstance(v, (int, float))
+                and not isinstance(v, bool)
+                and np.isfinite(float(v))
+            ]
+            if numeric:
+                aggregate[key] = float(np.mean(numeric))
+
+    return {
+        "folds": [asdict(fold) for fold in fold_results],
+        "aggregate": aggregate,
+        "fold_count": len(fold_results),
+    }
+
+
 __all__ = [
+    "SimpleFoldResult",
     "WalkForwardSplit",
     "anchored_walk_forward",
     "parse_grid_spec",
+    "walk_forward",
     "walkforward_drawdown",
 ]
