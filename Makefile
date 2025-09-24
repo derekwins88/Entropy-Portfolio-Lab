@@ -59,4 +59,13 @@ docs: diagram
 
 .PHONY: clean
 clean:
-	rm -rf docs-diagrams/out $(MOCK)/.mock.pid
+        rm -rf docs-diagrams/out $(MOCK)/.mock.pid
+
+## Hyperion helpers
+.PHONY: hyperion
+hyperion:
+        $(PY) -m backtest.optimize_hyperion --csv data/sample_multi_asset_data.csv --out-csv artifacts/hyperion_grid.csv --seed 42
+
+.PHONY: test-hyperion
+test-hyperion:
+        pytest -q backtest/tests/test_hyperion_smoke.py
