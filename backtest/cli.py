@@ -11,6 +11,7 @@ from backtest.walkforward import (
 )
 from backtest.strategies import (
     flat_factory,
+    praetorian_factory,
     rsi_ema_factory,
     sma_factory,
     trinity_factory,
@@ -91,6 +92,7 @@ def _resolve_strategy_factory(name: str) -> Callable[[Dict[str, object]], object
         "rsi_ema": rsi_ema_factory,
         "rsi_ema_mean_revert": rsi_ema_factory,
         "trinity": trinity_factory,
+        "praetorian": praetorian_factory,
     }
     key = name.replace("-", "_").lower()
     if key not in mapping:
@@ -290,7 +292,7 @@ def wf_opt_cmd(
 
 
 @cli.command("wf")
-@click.option("--strategy", default="trinity")
+@click.option("--strategy", default="trinity", type=click.Choice(["trinity", "praetorian"]))
 @click.option("--csv", "csv_path", required=True)
 @click.option("--grid", required=True, help="param grid: k=v1,v2 ...")
 @click.option("--mode", default="target", type=click.Choice(["target", "delta"]))
@@ -304,13 +306,12 @@ def wf_cmd(strategy, csv_path, grid, mode, train_days, test_days, out_csv):
 
     os.makedirs(Path(out_csv).parent, exist_ok=True)
     key = strategy.replace("-", "_").lower()
-    if key != "trinity":
-        raise click.ClickException("wf: only 'trinity' strategy is supported")
+    strat_factory = trinity_factory if key == "trinity" else praetorian_factory
 
     run_wf_from_cli(
         csv_path=csv_path,
         grid=grid,
-        StrategyFactory=trinity_factory,
+        StrategyFactory=strat_factory,
         run_backtest=engine_run_backtest,
         mode=mode,
         train_days=train_days,

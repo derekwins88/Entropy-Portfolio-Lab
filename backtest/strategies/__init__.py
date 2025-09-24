@@ -12,6 +12,8 @@ from .sma import factory as sma_factory
 from .trinity import Params as TrinityParams
 from .trinity import Trinity
 from .trinity import factory as trinity_factory
+from .praetorian import ThePraetorianEngine
+from .praetorian import factory as praetorian_factory
 
 __all__ = [
     "Flat",
@@ -23,6 +25,8 @@ __all__ = [
     "Trinity",
     "TrinityParams",
     "trinity_factory",
+    "ThePraetorianEngine",
+    "praetorian_factory",
     "RSIEmaMeanRevert",
     "RSIEmaParams",
     "rsi_ema_factory",

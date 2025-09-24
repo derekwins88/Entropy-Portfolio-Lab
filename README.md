@@ -106,6 +106,17 @@ python -m backtest.cli metrics --csv artifacts/wf_oos_returns.csv
 This command runs anchored folds (train → select → test) using the Trinity strategy,
 logging out-of-sample daily returns to `artifacts/wf_oos_returns.csv`.
 
+### Praetorian (adaptive risk) — Walk-Forward
+
+```bash
+python -m backtest.cli wf \
+  --strategy praetorian \
+  --csv data/SPY.csv \
+  --grid "entropy_lookback=40 entry_entropy_threshold=0.012,0.015,0.02 breakout_period=55,70 ema_fast=21 ema_slow=100 vwap_max_distance_atr=0.8,1.0 base_risk_percent=1.0,1.5 conviction_gain=0.2 conviction_loss=0.4" \
+  --mode target --out-csv artifacts/wf_oos_returns.csv
+python -m backtest.cli metrics --csv artifacts/wf_oos_returns.csv
+```
+
 ---
 
 ### Validator handoff
