@@ -15,7 +15,9 @@ from backtest.strategies import (
     sma_factory,
     trinity_factory,
 )
-from engines.multi_asset_backtest import run_backtest
+from backtest.walk_forward import run_wf_from_cli
+from backtest.core.engine import run_backtest as engine_run_backtest
+from engines.multi_asset_backtest import run_backtest as cli_run_backtest
 from engines.optimize import grid_search, walk_forward as anchored_walk_forward
 
 
@@ -32,7 +34,35 @@ def cli():
 @click.option("--plot", is_flag=True)
 @click.option("--seed", type=int, default=None, help="Deterministic seed")
 def run_cmd(**kw):
-    run_backtest(**kw)
+    cli_run_backtest(**kw)
+
+
+@cli.command("metrics")
+@click.option("--csv", "csv_path", required=True)
+def metrics_cmd(csv_path: str) -> None:
+    """Compute ADR and Sharpe for a CSV equity or returns series."""
+
+    import numpy as np
+
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        raise click.ClickException(f"CSV is empty: {csv_path}")
+
+    if "equity" in df.columns:
+        series = pd.Series(df["equity"], dtype=float)
+    else:
+        series = df.iloc[:, -1].astype(float)
+
+    returns = series.pct_change().dropna()
+    if returns.empty:
+        click.echo("ADR: 0.000%/day  Sharpe: 0.00  N=0")
+        return
+
+    mean = float(returns.mean())
+    std = float(returns.std(ddof=0))
+    sharpe = (mean / std * np.sqrt(252.0)) if std > 0 else 0.0
+    adr = mean * 100.0
+    click.echo(f"ADR: {adr:.3f}%/day  Sharpe: {sharpe:.2f}  N={len(returns)}")
 
 
 @cli.command("optimize")
@@ -166,7 +196,7 @@ def _prepare_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-@cli.command("wf")
+@cli.command("wf-json")
 @click.option("--csv", "csv_path", required=True, help="Path to input CSV")
 @click.option("--strategy", required=True, help="Strategy name (e.g., sma_cross)")
 @click.option("--params", default="{}", help="JSON dictionary of strategy parameters")
@@ -176,7 +206,7 @@ def _prepare_frame(frame: pd.DataFrame) -> pd.DataFrame:
 @click.option("--mode", type=click.Choice(["target", "delta"]), default="target")
 @click.option("--seed", type=int, default=42)
 @click.option("--out-json", default="wf_report.json")
-def wf_cmd(
+def wf_json_cmd(
     csv_path,
     strategy,
     params,
@@ -257,6 +287,37 @@ def wf_opt_cmd(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(report, indent=2, sort_keys=True))
     click.echo(f"[wf-opt] wrote {out_path} with {report['fold_count']} folds")
+
+
+@cli.command("wf")
+@click.option("--strategy", default="trinity")
+@click.option("--csv", "csv_path", required=True)
+@click.option("--grid", required=True, help="param grid: k=v1,v2 ...")
+@click.option("--mode", default="target", type=click.Choice(["target", "delta"]))
+@click.option("--train-days", default=500, type=int)
+@click.option("--test-days", default=125, type=int)
+@click.option("--out-csv", default="artifacts/wf_oos_returns.csv")
+def wf_cmd(strategy, csv_path, grid, mode, train_days, test_days, out_csv):
+    """Anchored walk-forward sweep that logs out-of-sample returns."""
+
+    import os
+
+    os.makedirs(Path(out_csv).parent, exist_ok=True)
+    key = strategy.replace("-", "_").lower()
+    if key != "trinity":
+        raise click.ClickException("wf: only 'trinity' strategy is supported")
+
+    run_wf_from_cli(
+        csv_path=csv_path,
+        grid=grid,
+        StrategyFactory=trinity_factory,
+        run_backtest=engine_run_backtest,
+        mode=mode,
+        train_days=train_days,
+        test_days=test_days,
+        out_csv=out_csv,
+        sizing_kwargs={"size_notional": 10_000},
+    )
 
 
 if __name__ == "__main__":
