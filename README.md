@@ -47,15 +47,6 @@ pip install pandas numpy matplotlib pytest
 pytest -q
 ```
 
-### Deterministic run (repro-friendly)
-```bash
-python -m backtest.cli run \
-  --strategy sma_cross \
-  --csv data/sample_multi_asset_data.csv \
-  --seed 42 \
-  --out-csv equity.csv
-```
-
 **Backtesting entry points** (after you add the code under `backtest/`):
 - `backtest/engine.py` — event-driven runner with OHLC-aware brackets & sizing
 - `backtest/portfolio.py` — simple equal-weight portfolio runner
@@ -80,19 +71,29 @@ df = pd.read_csv("data/AAPL.csv", parse_dates=[0], index_col=0)
 
 Placeholder CSVs are provided under `data/`. CI validates schema automatically.
 
-### CSV schema (single-asset)
+### CSV Schema
+Each asset has its own OHLCV columns. The required schema looks like:
 
-| column   | type    | notes                                   |
-|----------|---------|-----------------------------------------|
-| datetime | ISO8601 | e.g., `2020-01-02T00:00:00Z`             |
-| open     | float   |                                         |
-| high     | float   |                                         |
-| low      | float   |                                         |
-| close    | float   |                                         |
-| volume   | integer | units or shares                         |
+| datetime   | SYM_Open | SYM_High | SYM_Low | SYM_Close | SYM_Volume |
+|------------|----------|----------|---------|-----------|------------|
+| 2023-01-02 | 379.0    | 382.5    | 377.8   | 381.2     | 1200000    |
 
-**Wide (multi-asset) schema supported by validator**  
-`date|datetime, <SYM>_open, <SYM>_high, <SYM>_low, <SYM>_close, <SYM>_volume`
+Example: `sample_multi_asset_data.csv` includes `SPY`, `QQQ`, `TLT`.
+
+This ensures CI and backtests always have consistent, reproducible input.
+
+### Deterministic runs
+The CLI supports a `--seed` flag for reproducibility. Example:
+
+```bash
+python -m backtest.cli run \
+  --csv data/sample_multi_asset_data.csv \
+  --strategy sma_cross \
+  --seed 42 \
+  --out-csv equity.csv
+```
+
+This guarantees identical results across runs and CI.
 
 ---
 
