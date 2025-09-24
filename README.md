@@ -77,6 +77,21 @@ small—bump them up for real research data.
 
 > Goal: keep research and live execution aligned via shared specifications and metrics.
 
+### Walk-forward with tuning (train grid → pick best → test)
+
+```bash
+python -m backtest.cli wf-opt \
+  --csv data/SPY.csv \
+  --strategy trinity \
+  --grid 'entropy_lookback=40,60 breakout_period=55,70 entry_entropy_threshold=0.015,0.02 ema_fast=21 ema_slow=100' \
+  --metric-key Sharpe_annualized --train-years 2.0 --test-months 6.0 --step-months 6.0 \
+  --mode target --seed 42 --out-json wf_trinity.json
+```
+
+The report captures the best parameter set per fold along with out-of-sample metrics.
+Pass `--mode delta` and include `signal_mode=delta` in the grid if you prefer delta
+signals.
+
 See **[docs/system_diagram.md](docs/system_diagram.md)** for architecture and flow diagrams.
 
 ---
