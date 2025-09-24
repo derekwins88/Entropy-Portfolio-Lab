@@ -61,7 +61,7 @@ python -m backtest.cli run \
 ### Walk-forward (expanding train → OOS test)
 
 ```bash
-python -m backtest.cli wf \
+python -m backtest.cli wf-json \
   --csv data/sample_multi_asset_data.csv \
   --strategy sma_cross \
   --params '{"fast": 10, "slow": 30}' \
@@ -91,6 +91,28 @@ python -m backtest.cli wf-opt \
 The report captures the best parameter set per fold along with out-of-sample metrics.
 Pass `--mode delta` and include `signal_mode=delta` in the grid if you prefer delta
 signals.
+
+### Walk-Forward (Trinity)
+
+```bash
+python -m backtest.cli wf-trinity \
+  --csv data/SPY.csv \
+  --grid "entropy_lookback=40 entry_entropy_threshold=0.015,0.02 breakout_period=55,70 ema_fast=21 ema_slow=100" \
+  --mode target --out-csv artifacts/wf_oos_returns.csv
+# Then summarize
+python -m backtest.cli metrics --csv artifacts/wf_oos_returns.csv
+```
+
+This command runs anchored folds (train → select → test) using the Trinity strategy,
+logging out-of-sample daily returns to `artifacts/wf_oos_returns.csv`.
+
+---
+
+### Validator handoff
+
+`strategy_validation_suite 2.py` (yep, that filename) can now ingest
+`artifacts/wf_oos_returns.csv` directly. The CSV exposes a `ret_oos` column with
+daily returns; if the consumer just expects "last column wins" it'll still work.
 
 See **[docs/system_diagram.md](docs/system_diagram.md)** for architecture and flow diagrams.
 
