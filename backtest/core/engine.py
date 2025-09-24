@@ -11,6 +11,7 @@ from .broker import Broker
 from .data import ensure_datetime_index, standardize_columns
 from .indicators import atr as compute_atr
 from .strategy import BarStrategy
+from ..engines.risk_guardian import RiskGuardian
 
 
 @dataclass
@@ -65,6 +66,7 @@ def run_backtest(
     risk_pct: float = 0.01,
     commission: float = 0.0,
     slippage_bps: float = 0.0,
+    maxR_per_day: Optional[float] = None,
 ) -> RunResult:
     """Run a bar-by-bar backtest.
 
@@ -92,6 +94,9 @@ def run_backtest(
         frame["_atr"] = np.nan
 
     broker = Broker(starting_cash=starting_cash, commission=commission, slippage_bps=slippage_bps)
+    guardian: Optional[RiskGuardian] = None
+    if maxR_per_day is not None and maxR_per_day > 0:
+        guardian = RiskGuardian(maxR_per_day=float(maxR_per_day))
 
     equity_curve: list[float] = []
     positions: list[float] = []
@@ -99,8 +104,6 @@ def run_backtest(
     closed_trades_seen: set[int] = set()
 
     def _notify_trade_closures() -> None:
-        if not hasattr(strategy, "on_trade_closed"):
-            return
         for trade in broker.trade_log:
             if trade.exit_time is None:
                 continue
@@ -108,10 +111,20 @@ def run_backtest(
             if trade_id in closed_trades_seen:
                 continue
             pnl_value = float(trade.pnl) if trade.pnl is not None else 0.0
-            try:
-                strategy.on_trade_closed(pnl_value)
-            except Exception:
-                pass
+            if hasattr(strategy, "on_trade_closed"):
+                try:
+                    strategy.on_trade_closed(pnl_value)
+                except Exception:
+                    pass
+            if guardian and trade.exit_time is not None:
+                try:
+                    guardian.on_trade_closed(
+                        t_exit=trade.exit_time,
+                        pnl=pnl_value,
+                        initial_risk_dollars=float(trade.initial_risk or 0.0),
+                    )
+                except Exception:
+                    pass
             closed_trades_seen.add(trade_id)
 
     for i, (ts, row) in enumerate(frame.iterrows()):
@@ -142,11 +155,72 @@ def run_backtest(
 
             if mode == "delta":
                 qty = int(round(signal)) * base_size
+                if guardian and qty:
+                    if not guardian.can_enter(ts):
+                        new_position = broker.position + qty
+                        if broker.position == 0:
+                            qty = 0
+                        elif broker.position > 0:
+                            if new_position > broker.position:
+                                qty = 0
+                            elif new_position < 0:
+                                qty = -broker.position
+                        elif broker.position < 0:
+                            if new_position < broker.position:
+                                qty = 0
+                            elif new_position > 0:
+                                qty = -broker.position
                 if qty:
-                    broker.order_delta(qty, price, ts)
+                    new_position = broker.position + qty
+                    initial_risk_dollars = broker.equity * effective_risk_pct
+                    will_open = False
+                    if broker.position == 0 and new_position != 0:
+                        will_open = True
+                    elif broker.position > 0:
+                        if new_position > broker.position or new_position < 0:
+                            will_open = True
+                    elif broker.position < 0:
+                        if new_position < broker.position or new_position > 0:
+                            will_open = True
+                    broker.order_delta(
+                        qty,
+                        price,
+                        ts,
+                        initial_risk=initial_risk_dollars if (will_open and initial_risk_dollars > 0) else None,
+                    )
             else:  # mode == "target"
                 target = int(round(signal)) * base_size
-                broker.order_target(target, price, ts)
+                if guardian:
+                    if not guardian.can_enter(ts):
+                        if broker.position == 0:
+                            target = 0
+                        elif broker.position > 0:
+                            if target > broker.position:
+                                target = broker.position
+                            elif target < 0:
+                                target = 0
+                        elif broker.position < 0:
+                            if target < broker.position:
+                                target = broker.position
+                            elif target > 0:
+                                target = 0
+                if target != broker.position:
+                    initial_risk_dollars = broker.equity * effective_risk_pct
+                    will_open = False
+                    if broker.position == 0 and target != 0:
+                        will_open = True
+                    elif broker.position > 0:
+                        if target > broker.position or target < 0:
+                            will_open = True
+                    elif broker.position < 0:
+                        if target < broker.position or target > 0:
+                            will_open = True
+                    broker.order_target(
+                        target,
+                        price,
+                        ts,
+                        initial_risk=initial_risk_dollars if (will_open and initial_risk_dollars > 0) else None,
+                    )
 
             _notify_trade_closures()
 

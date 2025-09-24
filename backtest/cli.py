@@ -34,6 +34,14 @@ def cli():
 @click.option("--trades-csv", default=None)
 @click.option("--plot", is_flag=True)
 @click.option("--seed", type=int, default=None, help="Deterministic seed")
+@click.option(
+    "--maxR-per-day",
+    "maxR_per_day",
+    type=float,
+    default=3.0,
+    show_default=True,
+    help="Circuit breaker: block new entries once cumulative daily loss exceeds the limit (in R).",
+)
 def run_cmd(**kw):
     cli_run_backtest(**kw)
 

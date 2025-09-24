@@ -10,6 +10,7 @@ import pandas as pd
 
 from ..core.indicators import atr as compute_atr
 from ..core.strategy import BarStrategy
+from ..indicators.patterns import nr7
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
     from ..core.broker import Broker
@@ -26,6 +27,9 @@ class Params:
     ema_slow: int = 100
     vwap_len: int = 20
     vwap_max_dist_atr: float = 1.0
+    base_risk_percent: float = 1.0
+    turbo: int = 0
+    nr7: int = 0
     signal_mode: str = "target"
 
     @classmethod
@@ -65,6 +69,11 @@ class Params:
             vwap_max_dist_atr=_as_float(
                 params.get("vwap_max_dist_atr"), base.vwap_max_dist_atr
             ),
+            base_risk_percent=_as_float(
+                params.get("base_risk_percent"), base.base_risk_percent
+            ),
+            turbo=_as_int(params.get("turbo"), base.turbo),
+            nr7=_as_int(params.get("nr7"), base.nr7),
             signal_mode=_as_mode(params.get("signal_mode"), base.signal_mode),
         )
 
@@ -92,6 +101,7 @@ class Trinity(BarStrategy):
         self._ema_slow: Optional[pd.Series] = None
         self._vwap: Optional[pd.Series] = None
         self._atr: Optional[pd.Series] = None
+        self._nr7: Optional[pd.Series] = None
         self._current_side: int = 0
 
     def bind(self, data: pd.DataFrame) -> None:
@@ -129,6 +139,7 @@ class Trinity(BarStrategy):
             self._vwap = price_volume_sum / volume_sum.replace(0.0, np.nan)
 
         self._atr = compute_atr(high, low, close, length=14)
+        self._nr7 = nr7(high, low, 7).fillna(False)
         self._current_side = 0
 
     def warmup(self) -> int:
@@ -140,6 +151,18 @@ class Trinity(BarStrategy):
                 self.config.vwap_len,
             )
         )
+
+    def get_effective_risk(self) -> float:
+        base = float(self.config.base_risk_percent)
+        if self.config.turbo and self._entropy is not None and not self._entropy.empty:
+            try:
+                ent = float(self._entropy.iloc[-1])
+            except Exception:
+                ent = float("nan")
+            threshold = float(self.config.entry_entropy_threshold)
+            if np.isfinite(ent) and ent > 0 and threshold > 0 and ent <= 0.7 * threshold:
+                base *= 1.25
+        return base
 
     def _signal_mode(self) -> str:
         return self.config.signal_mode
@@ -171,6 +194,7 @@ class Trinity(BarStrategy):
             or self._ema_slow is None
             or self._vwap is None
             or self._atr is None
+            or (self.config.nr7 and self._nr7 is None)
         ):
             raise RuntimeError("Strategy is not bound to data")
 
@@ -181,6 +205,10 @@ class Trinity(BarStrategy):
         vwap_value = float(self._vwap.iloc[index])
         atr_value = float(self._atr.iloc[index])
         price = float(row["close"])
+
+        nr7_ok = True
+        if self.config.nr7:
+            nr7_ok = bool(self._nr7.iloc[index]) if self._nr7 is not None else False
 
         if not np.isfinite(entropy) or not np.isfinite(breakout_high):
             return self._emit(self._current_side)
@@ -200,7 +228,7 @@ class Trinity(BarStrategy):
 
         if price < ema_fast:
             desired_side = 0
-        elif self._current_side <= 0 and volatility_ok and price_ok and volume_ok:
+        elif self._current_side <= 0 and volatility_ok and price_ok and volume_ok and nr7_ok:
             desired_side = 1
 
         return self._emit(desired_side)
