@@ -26,6 +26,38 @@ This lab ties together:
 - **C# / NinjaTrader components** (execution-grade sizers/strategies)
 - **Specs** (one manifest that maps roadmap → code → strategy)
 
+### Data schemas (what the repo expects)
+
+**Single-asset (per-symbol) CSV** — used by loaders & validators in `data/`  
+| column     | type     | notes                      |
+|------------|----------|----------------------------|
+| `datetime` | ISO8601  | UTC recommended            |
+| `open`     | float    |                            |
+| `high`     | float    |                            |
+| `low`      | float    |                            |
+| `close`    | float    |                            |
+| `volume`   | integer  | optional for some assets   |
+
+**Multi-asset “wide” CSV** — used in quick backtests and examples  
+| column                | type    | notes                                  |
+|-----------------------|---------|----------------------------------------|
+| `datetime`            | ISO8601 | index column                           |
+| `<SYM>_Close` …       | float   | one `_Close` column per symbol (e.g., `SPY_Close`, `QQQ_Close`, `TLT_Close`) |
+| `<SYM>_Volume` (opt.) | integer | optional                               |
+
+> CI now generates a tiny deterministic sample at `data/sample_multi_asset_data.csv` so the examples run out-of-the-box.
+
+### Deterministic quick-run
+
+```bash
+# reproducible smoke on the generated sample (seed = 42)
+python -m backtest.cli run \
+  --csv data/sample_multi_asset_data.csv \
+  --strategy sma_cross \
+  --seed 42 \
+  --out-csv artifacts/equity.csv
+```
+
 > Goal: keep research and live execution aligned via shared specifications and metrics.
 
 See **[docs/system_diagram.md](docs/system_diagram.md)** for architecture and flow diagrams.
@@ -64,36 +96,6 @@ df = pd.read_csv("data/AAPL.csv", parse_dates=[0], index_col=0)
 # stats = summarize(rr.equity_curve, rr.fills, rr.trade_log)
 # print(stats)
 ```
-
----
-
-## Demo Data
-
-Placeholder CSVs are provided under `data/`. CI validates schema automatically.
-
-### CSV Schema
-Each asset has its own OHLCV columns. The required schema looks like:
-
-| datetime   | SYM_Open | SYM_High | SYM_Low | SYM_Close | SYM_Volume |
-|------------|----------|----------|---------|-----------|------------|
-| 2023-01-02 | 379.0    | 382.5    | 377.8   | 381.2     | 1200000    |
-
-Example: `sample_multi_asset_data.csv` includes `SPY`, `QQQ`, `TLT`.
-
-This ensures CI and backtests always have consistent, reproducible input.
-
-### Deterministic runs
-The CLI supports a `--seed` flag for reproducibility. Example:
-
-```bash
-python -m backtest.cli run \
-  --csv data/sample_multi_asset_data.csv \
-  --strategy sma_cross \
-  --seed 42 \
-  --out-csv equity.csv
-```
-
-This guarantees identical results across runs and CI.
 
 ---
 
