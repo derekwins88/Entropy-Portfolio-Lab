@@ -6,7 +6,7 @@ import itertools
 import math
 import inspect
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -100,6 +100,28 @@ def _ensure_param_grid(grid: Optional[Iterable[Dict[str, Any]]]) -> List[Dict[st
     if grid is None:
         return [{}]
     combos = [dict(params) for params in grid]
+    return combos or [{}]
+
+
+def _expand_param_grid_map(
+    grid: Optional[Mapping[str, Sequence[Any]]]
+) -> List[Dict[str, Any]]:
+    if not grid:
+        return [{}]
+
+    keys: List[str] = []
+    values: List[List[Any]] = []
+    for key, raw_values in grid.items():
+        if isinstance(raw_values, (str, bytes)):
+            choices = [raw_values]
+        else:
+            choices = list(raw_values)
+        if not choices:
+            raise ValueError(f"No values supplied for grid parameter '{key}'")
+        keys.append(str(key))
+        values.append([choice for choice in choices])
+
+    combos = [dict(zip(keys, combo)) for combo in itertools.product(*values)]
     return combos or [{}]
 
 
@@ -280,6 +302,19 @@ def _coerce_metric_values(metrics: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _metric_as_float(value: Any) -> float:
+    if value is None or isinstance(value, bool):
+        return float("-inf")
+    if isinstance(value, (np.integer, np.floating, int, float)):
+        num = float(value)
+        return num if np.isfinite(num) else float("-inf")
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return float("-inf")
+    return num if np.isfinite(num) else float("-inf")
+
+
 def _rolling_windows(
     index: pd.DatetimeIndex,
     train_window: pd.Timedelta,
@@ -310,6 +345,20 @@ def _accepts_seed(fn: Callable[..., Any]) -> bool:
     except (TypeError, ValueError):  # pragma: no cover - defensive guard
         return False
     return "seed" in params
+
+
+def _metrics_from_result(
+    result: RunResult,
+    metric_fn: Optional[Callable[[Any], Dict[str, Any]]],
+) -> Dict[str, Any]:
+    if metric_fn is None:
+        metrics = summarize(result.equity_curve, result.fills, result.trade_log)
+    else:
+        try:
+            metrics = metric_fn(result)
+        except TypeError:
+            metrics = metric_fn(getattr(result, "equity_curve", pd.Series(dtype=float)))
+    return _coerce_metric_values(dict(metrics))
 
 
 def walk_forward(
@@ -422,11 +471,131 @@ def walk_forward(
     }
 
 
+def walk_forward_opt(
+    data: pd.DataFrame,
+    make_strategy: Callable[[Dict[str, Any]], BarStrategy],
+    param_grid: Optional[Mapping[str, Sequence[Any]]],
+    *,
+    metric_key: str = "Sharpe_annualized",
+    train_years: float = 2.0,
+    test_months: float = 6.0,
+    step_months: float = 6.0,
+    seed: int = 42,
+    metric_fn: Optional[Callable[[Any], Dict[str, Any]]] = None,
+    run_fn: Optional[Callable[..., RunResult]] = None,
+    run_kwargs: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Walk-forward evaluation with in-sample parameter tuning per fold."""
+
+    if seed is not None:
+        try:  # pragma: no cover - guard for environments without numpy/random
+            import random
+
+            random.seed(seed)
+            np.random.seed(seed)
+        except Exception:  # pragma: no cover - deterministic best effort
+            pass
+
+    if run_fn is None:
+        from .core.engine import run_backtest as run_fn
+
+    run_kwargs = dict(run_kwargs or {})
+
+    df = data.copy()
+    if not isinstance(df.index, pd.DatetimeIndex):
+        datetime_column = None
+        for candidate in ("datetime", "date", "DATE", "Date"):
+            if candidate in df.columns:
+                datetime_column = candidate
+                break
+        if datetime_column is not None:
+            df = df.copy()
+            df[datetime_column] = pd.to_datetime(df[datetime_column])
+            df = df.set_index(datetime_column)
+        else:
+            df = ensure_datetime_index(df)
+    else:
+        df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
+
+    train_window = pd.Timedelta(days=max(int(train_years * 365.25), 1))
+    test_window = pd.Timedelta(days=max(int(test_months * 30.4375), 1))
+    step_window = pd.Timedelta(days=max(int(step_months * 30.4375), 1))
+
+    windows = _rolling_windows(df.index, train_window, test_window, step_window)
+    combos = _expand_param_grid_map(param_grid)
+
+    folds: List[Dict[str, Any]] = []
+
+    for idx, (train_start, train_end, test_start, test_end) in enumerate(windows, start=1):
+        train_slice = df.loc[train_start:train_end]
+        test_slice = df.loc[test_start:test_end]
+        if train_slice.empty or test_slice.empty:
+            continue
+
+        best_params: Optional[Dict[str, Any]] = None
+        best_metric = float("-inf")
+
+        for params in combos:
+            strategy = make_strategy(dict(params))
+            call_kwargs = dict(run_kwargs)
+            if _accepts_seed(run_fn):
+                call_kwargs.setdefault("seed", seed)
+            train_result = run_fn(train_slice, strategy, **call_kwargs)
+            metrics_train = _metrics_from_result(train_result, metric_fn)
+            metric_value = _metric_as_float(metrics_train.get(metric_key))
+            if metric_value > best_metric:
+                best_metric = metric_value
+                best_params = dict(params)
+
+        if best_params is None or not np.isfinite(best_metric):
+            raise ValueError(
+                f"Failed to find a valid parameter set for fold {idx} using metric '{metric_key}'"
+            )
+
+        strategy_test = make_strategy(dict(best_params))
+        call_kwargs = dict(run_kwargs)
+        if _accepts_seed(run_fn):
+            call_kwargs.setdefault("seed", seed)
+        test_result = run_fn(test_slice, strategy_test, **call_kwargs)
+        metrics_test = _metrics_from_result(test_result, metric_fn)
+
+        folds.append(
+            {
+                "fold_id": idx,
+                "train_start": str(train_slice.index[0].date()),
+                "train_end": str(train_slice.index[-1].date()),
+                "test_start": str(test_slice.index[0].date()),
+                "test_end": str(test_slice.index[-1].date()),
+                "best_params": best_params,
+                "metrics": metrics_test,
+            }
+        )
+
+    aggregate: Dict[str, Any] = {}
+    if folds:
+        keys = sorted({key for fold in folds for key in fold["metrics"]})
+        for key in keys:
+            values = [fold["metrics"].get(key) for fold in folds]
+            numeric = [
+                float(v)
+                for v in values
+                if isinstance(v, (int, float, np.integer, np.floating))
+                and not isinstance(v, bool)
+                and np.isfinite(float(v))
+            ]
+            if numeric:
+                aggregate[key] = float(np.mean(numeric))
+
+    return {"folds": folds, "aggregate": aggregate, "fold_count": len(folds)}
+
+
 __all__ = [
     "SimpleFoldResult",
     "WalkForwardSplit",
     "anchored_walk_forward",
     "parse_grid_spec",
     "walk_forward",
+    "walk_forward_opt",
     "walkforward_drawdown",
 ]

@@ -9,6 +9,9 @@ from .rsi_ema import factory as rsi_ema_factory
 from .sma import Params as SMACrossParams
 from .sma import SMACross
 from .sma import factory as sma_factory
+from .trinity import Params as TrinityParams
+from .trinity import Trinity
+from .trinity import factory as trinity_factory
 
 __all__ = [
     "Flat",
@@ -17,6 +20,9 @@ __all__ = [
     "SMACross",
     "SMACrossParams",
     "sma_factory",
+    "Trinity",
+    "TrinityParams",
+    "trinity_factory",
     "RSIEmaMeanRevert",
     "RSIEmaParams",
     "rsi_ema_factory",

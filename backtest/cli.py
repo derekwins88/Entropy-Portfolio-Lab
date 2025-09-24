@@ -1,12 +1,20 @@
 import json
 from pathlib import Path
-from typing import Callable, Dict, Iterable
+from typing import Callable, Dict, Iterable, List
 
 import click
 import pandas as pd
 
-from backtest.walkforward import walk_forward as walk_forward_report
-from backtest.strategies import flat_factory, rsi_ema_factory, sma_factory
+from backtest.walkforward import (
+    walk_forward as walk_forward_report,
+    walk_forward_opt as walk_forward_opt_report,
+)
+from backtest.strategies import (
+    flat_factory,
+    rsi_ema_factory,
+    sma_factory,
+    trinity_factory,
+)
 from engines.multi_asset_backtest import run_backtest
 from engines.optimize import grid_search, walk_forward as anchored_walk_forward
 
@@ -52,6 +60,7 @@ def _resolve_strategy_factory(name: str) -> Callable[[Dict[str, object]], object
         "sma": sma_factory,
         "rsi_ema": rsi_ema_factory,
         "rsi_ema_mean_revert": rsi_ema_factory,
+        "trinity": trinity_factory,
     }
     key = name.replace("-", "_").lower()
     if key not in mapping:
@@ -70,6 +79,67 @@ def _parse_params(raw: str) -> Dict[str, object]:
     if not isinstance(parsed, dict):
         raise click.ClickException("--params must decode to a JSON object")
     return parsed
+
+
+def _coerce_grid_value(value: object) -> object:
+    if isinstance(value, str):
+        raw = value.strip()
+        lowered = raw.lower()
+        if lowered in {"none", "null"}:
+            return None
+        if lowered in {"true", "false"}:
+            return lowered == "true"
+        try:
+            if raw.startswith("0") and raw not in {"0", "0.0"} and not raw.startswith("0."):
+                raise ValueError
+            return int(raw)
+        except ValueError:
+            try:
+                return float(raw)
+            except ValueError:
+                return raw
+    return value
+
+
+def _parse_grid(raw: str) -> Dict[str, List[object]]:
+    text = (raw or "").strip()
+    if not text:
+        return {}
+
+    if text.startswith("{"):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+            raise click.ClickException(f"Invalid JSON for --grid: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise click.ClickException("--grid JSON must decode to an object")
+        result: Dict[str, List[object]] = {}
+        for key, values in parsed.items():
+            if isinstance(values, list):
+                choices = values
+            else:
+                choices = [values]
+            if not choices:
+                raise click.ClickException(
+                    f"No values supplied for grid parameter '{key}'"
+                )
+            result[str(key)] = [_coerce_grid_value(choice) for choice in choices]
+        return result
+
+    tokens = text.split()
+    if not tokens:
+        return {}
+
+    grid: Dict[str, List[object]] = {}
+    for token in tokens:
+        if "=" not in token:
+            raise click.ClickException(f"Malformed grid token: {token}")
+        name, raw_values = token.split("=", 1)
+        values = [segment.strip() for segment in raw_values.split(",") if segment.strip()]
+        if not values:
+            raise click.ClickException(f"No values supplied for grid parameter '{name}'")
+        grid[name.strip()] = [_coerce_grid_value(value) for value in values]
+    return grid
 
 
 def _load_csv(path: str) -> pd.DataFrame:
@@ -103,9 +173,20 @@ def _prepare_frame(frame: pd.DataFrame) -> pd.DataFrame:
 @click.option("--train-years", type=float, default=2.0)
 @click.option("--test-months", type=float, default=3.0)
 @click.option("--step-months", type=float, default=3.0)
+@click.option("--mode", type=click.Choice(["target", "delta"]), default="target")
 @click.option("--seed", type=int, default=42)
 @click.option("--out-json", default="wf_report.json")
-def wf_cmd(csv_path, strategy, params, train_years, test_months, step_months, seed, out_json):
+def wf_cmd(
+    csv_path,
+    strategy,
+    params,
+    train_years,
+    test_months,
+    step_months,
+    mode,
+    seed,
+    out_json,
+):
     frame = _prepare_frame(_load_csv(csv_path))
     factory = _resolve_strategy_factory(strategy)
     params_dict = _parse_params(params)
@@ -118,12 +199,64 @@ def wf_cmd(csv_path, strategy, params, train_years, test_months, step_months, se
         test_months=test_months,
         step_months=step_months,
         seed=seed,
+        run_kwargs={"mode": mode},
     )
 
     out_path = Path(out_json)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(report, indent=2, sort_keys=True))
     click.echo(f"[wf] wrote {out_path} with {report['fold_count']} folds")
+
+
+@cli.command("wf-opt")
+@click.option("--csv", "csv_path", required=True, help="Path to input CSV")
+@click.option("--strategy", required=True, help="Strategy name (e.g., trinity)")
+@click.option(
+    "--grid",
+    required=True,
+    help="Parameter grid as JSON or CLI spec (e.g. fast=10,20 slow=40,60)",
+)
+@click.option("--metric-key", default="Sharpe_annualized", show_default=True)
+@click.option("--train-years", type=float, default=2.0)
+@click.option("--test-months", type=float, default=6.0)
+@click.option("--step-months", type=float, default=6.0)
+@click.option("--mode", type=click.Choice(["target", "delta"]), default="target")
+@click.option("--seed", type=int, default=42)
+@click.option("--out-json", default="wf_opt_report.json")
+def wf_opt_cmd(
+    csv_path,
+    strategy,
+    grid,
+    metric_key,
+    train_years,
+    test_months,
+    step_months,
+    mode,
+    seed,
+    out_json,
+):
+    frame = _prepare_frame(_load_csv(csv_path))
+    factory = _resolve_strategy_factory(strategy)
+    grid_spec = _parse_grid(grid)
+    if not grid_spec:
+        raise click.ClickException("--grid specification is empty")
+
+    report = walk_forward_opt_report(
+        frame,
+        make_strategy=factory,
+        param_grid=grid_spec,
+        metric_key=metric_key,
+        train_years=train_years,
+        test_months=test_months,
+        step_months=step_months,
+        seed=seed,
+        run_kwargs={"mode": mode},
+    )
+
+    out_path = Path(out_json)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(report, indent=2, sort_keys=True))
+    click.echo(f"[wf-opt] wrote {out_path} with {report['fold_count']} folds")
 
 
 if __name__ == "__main__":
