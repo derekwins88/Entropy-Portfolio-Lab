@@ -11,7 +11,23 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip
-      - run: pip install pandas numpy matplotlib pytest
+      - run: pip install -r requirements.txt
       - name: Validate CSV placeholders
         run: python data/fetch_data.py
       - run: pytest -q
+      - name: Walk-forward smoke (deterministic)
+        run: |
+          python -m backtest.cli wf \
+            --csv data/sample_multi_asset_data.csv \
+            --strategy sma_cross \
+            --params '{"fast":10,"slow":30}' \
+            --train-years 0.05 --test-months 0.5 --step-months 0.5 \
+            --seed 42 \
+            --out-json wf_ci.json
+          test -f wf_ci.json
+          python - <<'PY'
+          import json
+          report = json.load(open('wf_ci.json'))
+          assert report['fold_count'] > 0, 'walk-forward produced no folds'
+          print('wf aggregate:', report['aggregate'])
+          PY

@@ -58,6 +58,23 @@ python -m backtest.cli run \
   --out-csv artifacts/equity.csv
 ```
 
+### Walk-forward (expanding train → OOS test)
+
+```bash
+python -m backtest.cli wf \
+  --csv data/sample_multi_asset_data.csv \
+  --strategy sma_cross \
+  --params '{"fast": 10, "slow": 30}' \
+  --train-years 0.05 --test-months 0.5 --step-months 0.5 \
+  --seed 42 \
+  --out-json wf_report.json
+```
+
+The command writes `wf_report.json` with per-fold metrics and an aggregate block.
+Use this in CI to guard regressions without leaking future data. The sample
+dataset is only a few dozen rows, so the window sizes above are intentionally
+small—bump them up for real research data.
+
 > Goal: keep research and live execution aligned via shared specifications and metrics.
 
 See **[docs/system_diagram.md](docs/system_diagram.md)** for architecture and flow diagrams.
