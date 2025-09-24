@@ -48,7 +48,7 @@ def _load_data(csv_path: Path) -> pd.DataFrame:
     return frame
 
 
-def run_backtest(
+def legacy_run_backtest(
     strategy,
     csv_path,
     params=None,
@@ -141,3 +141,8 @@ def run_backtest(
     mdd = float(drawdown.min()) if not drawdown.empty else 0.0
 
     return {"sharpe": sharpe, "mdd": mdd, "total_return": total_return}
+
+
+from ..core.engine import run_backtest
+
+__all__ = ["legacy_run_backtest", "run_backtest"]

@@ -96,19 +96,43 @@ def run_backtest(
     equity_curve: list[float] = []
     positions: list[float] = []
     index: list[pd.Timestamp] = []
+    closed_trades_seen: set[int] = set()
+
+    def _notify_trade_closures() -> None:
+        if not hasattr(strategy, "on_trade_closed"):
+            return
+        for trade in broker.trade_log:
+            if trade.exit_time is None:
+                continue
+            trade_id = id(trade)
+            if trade_id in closed_trades_seen:
+                continue
+            pnl_value = float(trade.pnl) if trade.pnl is not None else 0.0
+            try:
+                strategy.on_trade_closed(pnl_value)
+            except Exception:
+                pass
+            closed_trades_seen.add(trade_id)
 
     for i, (ts, row) in enumerate(frame.iterrows()):
         price = float(row["close"])
         broker.update_market(ts, price)
 
         atr_value = row.get("_atr", np.nan)
+        dyn_risk_pct = None
+        if hasattr(strategy, "get_effective_risk"):
+            try:
+                dyn_risk_pct = max(0.0, float(strategy.get_effective_risk()) / 100.0)
+            except Exception:
+                dyn_risk_pct = None
+        effective_risk_pct = dyn_risk_pct if dyn_risk_pct is not None else risk_pct
         base_size = _resolve_base_size(
             price,
             broker,
             size=size,
             size_notional=size_notional,
             risk_R=risk_R,
-            risk_pct=risk_pct,
+            risk_pct=effective_risk_pct,
             atr_value=float(atr_value) if not np.isnan(atr_value) else None,
         )
 
@@ -123,6 +147,8 @@ def run_backtest(
             else:  # mode == "target"
                 target = int(round(signal)) * base_size
                 broker.order_target(target, price, ts)
+
+            _notify_trade_closures()
 
         equity_curve.append(broker.equity)
         positions.append(broker.position)
