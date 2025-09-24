@@ -9,7 +9,7 @@ jobs:
   ui:
     name: UI / ui / test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     env:
       # Point the UI at the local mock server during CI
@@ -20,60 +20,63 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # If we have at least one lockfile anywhere in the repo, enable npm cache.
-      - name: Setup Node (with cache)
-        if: ${{ hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != '' }}
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            tools/mock-server/package-lock.json
-            ui/package-lock.json
+          cache-dependency-path: ui/package-lock.json
 
-      # Otherwise, fall back to plain setup (no cache), which avoids the hard error.
-      - name: Setup Node (no cache)
-        if: ${{ hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == '' }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install root tools (wait-on, concurrently)
+      # --- Minimal, self-contained WS mock for CI ---
+      - name: Start mock WS (background)
+        env:
+          MOCK_WS_PORT: 8787
         run: |
-          npm i -g wait-on concurrently
-
-      # --- Mock server ------------------------------------------------------
-      - name: Install mock-server deps
-        working-directory: tools/mock-server
-        run: npm ci || npm i
-
-      - name: Start mock server (background)
-        working-directory: tools/mock-server
-        run: |
-          npm start &
+          # Use a throwaway workspace; don't touch repo files
+          mkdir -p /tmp/mock-ws && cd /tmp/mock-ws
+          npm init -y >/dev/null 2>&1 || true
+          npm i --no-save ws@8 >/dev/null
+          node - <<'JS' &
+          const WebSocket = require('ws');
+          const port = parseInt(process.env.MOCK_WS_PORT || '8787', 10);
+          const wss = new WebSocket.Server({ host: '127.0.0.1', port });
+          wss.on('connection', ws => {
+            ws.on('message', m => ws.send(m.toString()));
+            ws.send('ready');
+          });
+          console.log('[mock-ws] listening on ws://127.0.0.1:' + port);
+          setInterval(() => {}, 1 << 30);
+          JS
 
       # --- UI build + preview ----------------------------------------------
       - name: Install UI deps
         working-directory: ui
-        run: npm ci || npm i
+        run: npm ci
 
       - name: Build UI
         working-directory: ui
         run: npm run build
 
       - name: Preview UI (background)
+        env:
+          VITE_API_URL: http://127.0.0.1:8787
+          VITE_WS_URL:  ws://127.0.0.1:8787
         working-directory: ui
         run: |
-          # Vite preview defaults to 4173; keep it explicit
-          npm run preview -- --port 4173 --host 127.0.0.1 &
+          npm run preview -- --host 127.0.0.1 --port 4173 &
 
       - name: Wait for services
+        env:
+          MOCK_WS_PORT: 8787
         run: |
-          # Wait for both the HTTP UI and WS mock endpoints
-          wait-on http://127.0.0.1:4173
-          # wait-on supports ws:// targets too
-          wait-on ws://127.0.0.1:8787
+          npx --yes wait-on@7 \
+            http://127.0.0.1:4173 \
+            ws://127.0.0.1:${MOCK_WS_PORT} \
+            --timeout 120000
+
+      - name: Curl landing page (smoke)
+        run: |
+          curl -fsS http://127.0.0.1:4173 >/dev/null
 
       # --- Playwright smoke -------------------------------------------------
       - name: Install Playwright (browsers + deps)
