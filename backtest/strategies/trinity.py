@@ -1,4 +1,4 @@
-"""Trinity strategy combining volatility, price, and volume signals."""
+"""Trinity strategy combining volatility, breakout, and volume consensus."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Dict, Optional
 import numpy as np
 import pandas as pd
 
+from ..core.indicators import atr as compute_atr
 from ..core.strategy import BarStrategy
 
 if TYPE_CHECKING:  # pragma: no cover - import for typing only
@@ -19,13 +20,12 @@ class Params:
     """Configuration schema for :class:`Trinity`."""
 
     entropy_lookback: int = 40
-    entry_entropy_threshold: float = 0.02
+    entry_entropy_threshold: float = 0.015
     breakout_period: int = 55
     ema_fast: int = 21
     ema_slow: int = 100
     vwap_len: int = 20
-    stop_pct: float = 0.02
-    take_pct: float = 0.04
+    vwap_max_dist_atr: float = 1.0
     signal_mode: str = "target"
 
     @classmethod
@@ -62,8 +62,9 @@ class Params:
             ema_fast=_as_int(params.get("ema_fast"), base.ema_fast),
             ema_slow=_as_int(params.get("ema_slow"), base.ema_slow),
             vwap_len=_as_int(params.get("vwap_len"), base.vwap_len),
-            stop_pct=_as_float(params.get("stop_pct"), base.stop_pct),
-            take_pct=_as_float(params.get("take_pct"), base.take_pct),
+            vwap_max_dist_atr=_as_float(
+                params.get("vwap_max_dist_atr"), base.vwap_max_dist_atr
+            ),
             signal_mode=_as_mode(params.get("signal_mode"), base.signal_mode),
         )
 
@@ -82,12 +83,15 @@ class Trinity(BarStrategy):
             raise ValueError("EMA lengths must be positive integers")
         if self.config.vwap_len <= 0:
             raise ValueError("VWAP length must be a positive integer")
+        if self.config.vwap_max_dist_atr < 0:
+            raise ValueError("vwap_max_dist_atr must be non-negative")
 
         self._entropy: Optional[pd.Series] = None
         self._breakout_high: Optional[pd.Series] = None
         self._ema_fast: Optional[pd.Series] = None
         self._ema_slow: Optional[pd.Series] = None
         self._vwap: Optional[pd.Series] = None
+        self._atr: Optional[pd.Series] = None
         self._current_side: int = 0
 
     def bind(self, data: pd.DataFrame) -> None:
@@ -96,13 +100,14 @@ class Trinity(BarStrategy):
         frame = self.data
         close = frame["close"].astype(float)
         high = frame["high"].astype(float) if "high" in frame else close
+        low = frame["low"].astype(float) if "low" in frame else close
 
         if "volume" in frame:
             volume = frame["volume"].astype(float)
         else:
             volume = pd.Series(np.ones(len(frame)), index=frame.index, dtype=float)
 
-        log_returns = np.log(close / close.shift(1)).fillna(0.0)
+        log_returns = np.log(close).diff().fillna(0.0)
         self._entropy = log_returns.rolling(
             self.config.entropy_lookback, min_periods=self.config.entropy_lookback
         ).std()
@@ -123,7 +128,7 @@ class Trinity(BarStrategy):
         with np.errstate(invalid="ignore", divide="ignore"):
             self._vwap = price_volume_sum / volume_sum.replace(0.0, np.nan)
 
-        # Reset side when binding to new data
+        self._atr = compute_atr(high, low, close, length=14)
         self._current_side = 0
 
     def warmup(self) -> int:
@@ -165,6 +170,7 @@ class Trinity(BarStrategy):
             or self._ema_fast is None
             or self._ema_slow is None
             or self._vwap is None
+            or self._atr is None
         ):
             raise RuntimeError("Strategy is not bound to data")
 
@@ -173,31 +179,32 @@ class Trinity(BarStrategy):
         ema_fast = float(self._ema_fast.iloc[index])
         ema_slow = float(self._ema_slow.iloc[index])
         vwap_value = float(self._vwap.iloc[index])
+        atr_value = float(self._atr.iloc[index])
+        price = float(row["close"])
 
         if not np.isfinite(entropy) or not np.isfinite(breakout_high):
             return self._emit(self._current_side)
 
-        price = float(row["close"])
-
         volatility_ok = entropy <= float(self.config.entry_entropy_threshold)
         price_ok = np.isfinite(breakout_high) and price > breakout_high and ema_fast > ema_slow
+
         volume_ok = np.isfinite(vwap_value)
         if volume_ok:
-            band = price * 0.005
-            volume_ok = abs(price - vwap_value) <= band
+            if not np.isfinite(atr_value) or atr_value <= 0:
+                volume_ok = True
+            else:
+                tolerance = float(self.config.vwap_max_dist_atr) * atr_value
+                volume_ok = abs(price - vwap_value) <= tolerance
 
         desired_side = self._current_side
 
-        if self._current_side <= 0 and volatility_ok and price_ok and volume_ok:
-            desired_side = 1
-        elif self._current_side > 0 and price < ema_fast:
+        if price < ema_fast:
             desired_side = 0
+        elif self._current_side <= 0 and volatility_ok and price_ok and volume_ok:
+            desired_side = 1
 
         return self._emit(desired_side)
 
 
 def factory(params: Optional[Dict[str, object]]) -> Trinity:
     return Trinity(params)
-
-
-__all__ = ["Params", "Trinity", "factory"]
