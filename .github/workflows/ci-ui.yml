@@ -37,12 +37,17 @@ jobs:
 
       - name: Install mock WS deps
         working-directory: tools/mock-ws
-        run: npm ci
+        run: |
+          npm install --no-fund --no-audit
+        env:
+          MOCK_WS_PORT: 8787
 
       - name: Start mock WS (background)
-        working-directory: tools/mock-ws
         run: |
-          npm start &
+          node tools/mock-ws/server.js &
+          echo $! > ws.pid
+        env:
+          MOCK_WS_PORT: 8787
 
       - name: Install UI deps
         working-directory: ui
@@ -59,13 +64,14 @@ jobs:
           VITE_WS_URL: ws://127.0.0.1:${{ env.MOCK_WS_PORT }}
         run: |
           npm run preview -- --host 127.0.0.1 --port 4173 &
+          echo $! > ../ui.pid
 
       - name: Wait for services
         env:
           VITE_API_URL: http://127.0.0.1:${{ env.MOCK_WS_PORT }}
           VITE_WS_URL: ws://127.0.0.1:${{ env.MOCK_WS_PORT }}
+          MOCK_WS_PORT: 8787
         run: |
-          # Wait for both the HTTP UI and WS mock endpoints (120s cap)
           npx --yes wait-on@7 \
             http://127.0.0.1:4173 \
             ws://127.0.0.1:${MOCK_WS_PORT} \
@@ -89,3 +95,9 @@ jobs:
           npm i -g @lhci/cli@0.13.x
           # Don’t fail the job on Lighthouse; we only print a score summary
           lhci healthcheck --assert.off --collect.url=http://127.0.0.1:4173 || true
+
+      - name: Cleanup background processes
+        if: always()
+        run: |
+          kill -0 $(cat ui.pid) 2>/dev/null && kill $(cat ui.pid) || true
+          kill -0 $(cat ws.pid) 2>/dev/null && kill $(cat ws.pid) || true
