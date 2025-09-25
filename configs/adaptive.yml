@@ -1,0 +1,25 @@
+adaptive:
+  enabled: true
+  online_learner:
+    adapt_rate: 0.02
+    momentum: 0.85
+    expl_noise: 0.0
+    bounds:
+      tilt: [0.0, 0.95]
+      vol_target: [0.01, 0.30]
+      adapt_rate: [0.0001, 0.2]
+    init_params:
+      tilt: 0.5
+      vol_target: 0.10
+      adapt_rate: 0.02
+
+  regime:
+    vol_window: 63
+    ent_window: 63
+
+  watchdog:
+    max_dd: 0.25
+    min_sharpe: -0.5
+    max_turnover: 2.0
+    webhook: null
+    cooldown_secs: 3600

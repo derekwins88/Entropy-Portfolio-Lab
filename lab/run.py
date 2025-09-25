@@ -106,6 +106,67 @@ def main(config_path: str = "configs/etrp.yml"):
     px = load_prices(cfg)
     res = run_etrp(px, cfg)
 
+    # --- adaptive integration (optional)
+    if cfg.get("adaptive", {}).get("enabled", False):
+        from lab.adaptive.online_learner import OnlineLearner, OnlineLearnerState
+        from lab.adaptive.regime_classifier import classify_regime
+        from lab.adaptive.vol_targeter import compute_target_scalar
+        from lab.adaptive.watchdog import Watchdog, WatchdogConfig
+
+        # prepare metrics for learner
+        metrics = res.get("metrics", {})
+
+        adaptive_cfg = cfg.get("adaptive", {})
+        learner_cfg = adaptive_cfg.get("online_learner", {})
+        init_params = learner_cfg.get(
+            "init_params",
+            {
+                "tilt": 0.5,
+                "vol_target": cfg.get("strategy", {}).get("target_vol_ann", 0.1),
+                "adapt_rate": learner_cfg.get("adapt_rate", 0.01),
+            },
+        )
+        bounds = {k: tuple(v) for k, v in learner_cfg.get("bounds", {}).items()}
+        state = OnlineLearnerState(
+            params=init_params,
+            adapt_rate=learner_cfg.get("adapt_rate", 0.01),
+            momentum=learner_cfg.get("momentum", 0.9),
+            expl_noise=learner_cfg.get("expl_noise", 0.0),
+            bounds=bounds,
+        )
+        learner = OnlineLearner(state)
+        new_params = learner.update(
+            {
+                "sharpe": metrics.get("Sharpe", 0.0),
+                "maxdd": metrics.get("MaxDD", 0.0),
+                "entropy": 0.0,
+            }
+        )
+        print(f"[adaptive] updated params: {new_params}")
+
+        regime_cfg = adaptive_cfg.get("regime", {})
+        labels = classify_regime(
+            px.pct_change().dropna(),
+            entropy=None,
+            vol_window=regime_cfg.get("vol_window", 63),
+            ent_window=regime_cfg.get("ent_window", 63),
+        )
+        latest_regime = labels.dropna().iloc[-1] if not labels.dropna().empty else "unknown"
+        print(f"[adaptive] latest regime: {latest_regime}")
+
+        scalar = compute_target_scalar(
+            res.get("port_monthly"),
+            base_target_ann=new_params.get(
+                "vol_target",
+                cfg.get("strategy", {}).get("target_vol_ann", 0.1),
+            ),
+        )
+        print(f"[adaptive] exposure scalar: {scalar:.3f}")
+
+        watchdog_cfg = adaptive_cfg.get("watchdog", {})
+        wd = Watchdog(WatchdogConfig(**watchdog_cfg))
+        wd.check(metrics, context={"regime": latest_regime, "params": new_params})
+
     # save
     res["weights_me"].to_csv(outdir / "weights_monthly.csv")
     res["port_monthly"].to_csv(outdir / "portfolio_monthly.csv", header=["ret"])
