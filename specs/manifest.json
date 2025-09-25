@@ -22,6 +22,8 @@
   "csharp": {
     "sizer": "csharp/MultiAssetPortfolioSizer.cs",
     "strategy": "csharp/AethelredAegis.cs",
+    "execution": "csharp/AlphaBreakoutEntropy_v1_1.cs",
+    "private": "// Maintain proprietary helpers like AlphaBreakoutEntropyPrivateLogic.cs outside source control.",
     "alignment": "Mirror entropy thresholds & risk knobs between Python and C#."
   },
   "strategies": [
@@ -34,6 +36,19 @@
         "Multi-timeframe Confirmer"
       ],
       "target": "NinjaTrader live trading"
+    },
+    {
+      "name": "AlphaBreakoutEntropy_v1_1",
+      "type": "Alpha Breakout Entropy",
+      "modules": [
+        "AlphaBreakoutEntropy_v1_1"
+      ],
+      "target": "csharp",
+      "params": [
+        "entropy_lookback",
+        "breakout_period",
+        "risk_fraction"
+      ]
     }
   ]
 }
