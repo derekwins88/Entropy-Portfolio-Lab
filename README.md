@@ -26,6 +26,10 @@ This lab ties together:
 - **C# / NinjaTrader components** (execution-grade sizers/strategies)
 - **Specs** (one manifest that maps roadmap → code → strategy)
 
+## Strategy Integration
+
+The `AlphaBreakoutEntropy_v1_1` strategy now ships alongside the other NinjaTrader components in `csharp/`. Sensitive helpers (for example, `AlphaBreakoutEntropyPrivateLogic.cs`) stay outside version control while the public entry point is referenced in `specs/manifest.json` for parameter exposure and coordination with the research stack.
+
 ### Data schemas (what the repo expects)
 
 **Single-asset (per-symbol) CSV** — used by loaders & validators in `data/`  
