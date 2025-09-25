@@ -1,5 +1,10 @@
 adaptive:
   enabled: true
+  persistence:
+    state_path: runs/adaptive_state.pkl      # where to store OnlineLearnerState
+    snapshot_json: runs/adaptive_state.json  # human-readable mirror (optional)
+    keep_json: true
+
   online_learner:
     adapt_rate: 0.02
     momentum: 0.85

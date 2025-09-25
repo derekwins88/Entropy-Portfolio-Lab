@@ -7,7 +7,10 @@ from __future__ import annotations
 import logging
 import time
 import json
-import requests  # lightweight; user may prefer aiohttp in production
+try:
+    import requests  # lightweight; user may prefer aiohttp in production
+except ImportError:  # pragma: no cover - optional dependency
+    requests = None
 from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
@@ -33,6 +36,9 @@ class Watchdog:
     def _post(self, payload: dict):
         if not self.cfg.webhook:
             log.info("[watchdog] webhook not configured; skipping post. payload=%s", payload)
+            return
+        if requests is None:
+            log.warning("[watchdog] requests not available; cannot post webhook")
             return
         try:
             headers = {"Content-Type": "application/json"}
