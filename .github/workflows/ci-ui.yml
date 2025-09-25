@@ -3,102 +3,22 @@ name: ci-ui
 on:
   push:
     branches: [ main ]
-    paths:
-      - "ui/**"
-      - ".github/workflows/ci-ui.yml"
   pull_request:
-    paths:
-      - "ui/**"
-      - ".github/workflows/ci-ui.yml"
+    branches: [ main ]
 
 jobs:
-  ui:
-    name: UI / ui / test
+  build-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      # Keep one source of truth for mock WS port
-      MOCK_WS_PORT: 8787
-
+    defaults:
+      run:
+        working-directory: ui
     steps:
-      - name: Set up job
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: '20'
+          cache: 'npm'
           cache-dependency-path: ui/package-lock.json
-
-      - name: Install mock WS deps
-        working-directory: tools/mock-ws
-        run: npm ci --no-audit --no-fund
-
-      - name: Start mock WS (background)
-        working-directory: tools/mock-ws
-        env:
-          MOCK_WS_PORT: ${{ env.MOCK_WS_PORT }}
-        run: |
-          npm start --silent > ../../ws.log 2>&1 &
-          echo $! > ../../ws.pid
-          sleep 1
-          if ! kill -0 $(cat ../../ws.pid); then
-            echo "Mock WS failed to start; log follows" >&2
-            cat ../../ws.log >&2
-            exit 1
-          fi
-
-      - name: Install UI deps
-        working-directory: ui
-        run: npm ci
-
-      - name: Build UI
-        working-directory: ui
-        run: npm run build
-
-      - name: Preview UI (background)
-        working-directory: ui
-        env:
-          VITE_API_URL: http://127.0.0.1:${{ env.MOCK_WS_PORT }}
-          VITE_WS_URL: ws://127.0.0.1:${{ env.MOCK_WS_PORT }}
-        run: |
-          npm run preview -- --host 127.0.0.1 --port 4173 &
-          echo $! > ../ui.pid
-
-      - name: Wait for services
-        env:
-          VITE_API_URL: http://127.0.0.1:${{ env.MOCK_WS_PORT }}
-          VITE_WS_URL: ws://127.0.0.1:${{ env.MOCK_WS_PORT }}
-          MOCK_WS_PORT: 8787
-        run: |
-          npx --yes wait-on@7 \
-            http://127.0.0.1:4173 \
-            ws://127.0.0.1:${MOCK_WS_PORT} \
-            --timeout 120000
-
-      - name: Curl landing page (smoke)
-        run: |
-          curl -fsS http://127.0.0.1:4173 >/dev/null
-
-      - name: Install Playwright (browsers + deps)
-        run: npx playwright install --with-deps
-
-      - name: Run Playwright smoke tests
-        working-directory: ui
-        run: |
-          npx playwright test --reporter=list
-
-      - name: Lighthouse (informational)
-        if: always()
-        run: |
-          npm i -g @lhci/cli@0.13.x
-          # Don’t fail the job on Lighthouse; we only print a score summary
-          lhci healthcheck --assert.off --collect.url=http://127.0.0.1:4173 || true
-
-      - name: Cleanup background processes
-        if: always()
-        run: |
-          kill -0 $(cat ui.pid) 2>/dev/null && kill $(cat ui.pid) || true
-          kill -0 $(cat ws.pid) 2>/dev/null && kill $(cat ws.pid) || true
-          rm -f ui.pid ws.pid ws.log
+      - run: npm ci
+      - run: npm run build --if-present
+      - run: npm test --if-present

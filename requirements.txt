@@ -5,3 +5,4 @@ matplotlib==3.9.0
 click==8.1.7
 pytest==8.2.0
 hypothesis==6.112.3
+PyYAML==6.0.1
