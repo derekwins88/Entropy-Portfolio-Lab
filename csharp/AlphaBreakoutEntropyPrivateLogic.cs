@@ -18,33 +18,30 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (CurrentBar <= EntropyLookback)
                 return 0.0;
 
-            double sum = 0.0;
             int lookback = Math.Min(EntropyLookback, CurrentBar);
+            double[] returns = new double[lookback];
             for (int i = 0; i < lookback; i++)
             {
-                double diff = Close[i] - Close[i + 1];
-                sum += Math.Abs(diff);
+                returns[i] = Close[i] - Close[i + 1];
             }
 
-            return lookback > 0 ? sum / lookback : 0.0;
+            return PrivateLogic.CalculatePrivateEntropy(returns, lookback);
         }
 
         private void InitializePrivateResonance()
         {
-            // Placeholder hook for proprietary motif or resonance state.
+            PrivateLogic.InitializeResonance();
             lastEntropy = 0.0;
         }
 
         private bool IsPrivateEntryValid()
         {
-            // Placeholder gate that can be extended with private checks.
-            return true;
+            return PrivateLogic.IsEntryValid();
         }
 
         private bool IsPrivateExitValid()
         {
-            // Placeholder gate that can be extended with private checks.
-            return true;
+            return PrivateLogic.IsExitValid();
         }
     }
 }
