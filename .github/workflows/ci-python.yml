@@ -20,6 +20,10 @@ jobs:
         run: ruff check backtest || true
       - name: Type-check (best-effort)
         run: mypy backtest || true
+      - name: Walkforward test (smoke)
+        run: python scripts/run_walkforward.py --config configs/etrp.yml --train 3 --test 1 --out runs/walkforward_smoke.csv
+      - name: Placebo test (smoke)
+        run: python scripts/run_placebo.py --config configs/etrp.yml --mode shuffle_months --out runs/placebo_smoke.csv
       - name: Tests + coverage
         run: pytest -q --cov=backtest --cov-report=xml
       - name: Upload coverage
