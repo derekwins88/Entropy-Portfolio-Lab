@@ -1,0 +1,22 @@
+seed: 42
+data:
+  data_dir: data
+  universe: [SPY, QQQ, IWM, EFA, EEM, TLT, IEF, LQD, GLD, SHY]
+  use_synth_if_missing: true
+backtest:
+  start: 2012-01-01
+  end: 2025-01-01
+  rebalance: "M"
+  slippage_bps: 1
+strategy:
+  window_days: 63
+  entropy_bins: 20
+  weight_cap: 0.30
+  target_vol_ann: 0.10
+  regime:
+    vol_pctl: 0.95
+    entropy_pctl: 0.80
+    defense_weights: { IEF: 0.35, TLT: 0.35, SHY: 0.30 }
+output:
+  out_dir: runs
+  plot: true
