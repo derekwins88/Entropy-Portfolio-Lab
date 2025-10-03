@@ -1,4 +1,8 @@
-# Entropy Portfolio Lab
+# EntropyLab ⚡  
+Turn market chaos into backtests in 13 seconds.  
+`pip install entropylab` → [Get Pro](https://entropylab.co)
+
+<!-- (Keep your existing README content below this line) -->
 
 <!-- ===== Project Badges ===== -->
 [![python-ci](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml/badge.svg?branch=main)](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml)
@@ -8,13 +12,13 @@
 
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![Node 20](https://img.shields.io/badge/Node-20-339933?logo=node.js&logoColor=white)
-[![License: Polyform Noncommercial](https://img.shields.io/badge/License-Polyform%20NC-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](.github/CONTRIBUTING.md)
 [![Last commit](https://img.shields.io/github/last-commit/derekwins88/Entropy-Portfolio-Lab.svg)](https://github.com/derekwins88/Entropy-Portfolio-Lab/commits/main)
 
 > A unified, research-to-execution sandbox for **entropy-aware portfolio trading**.
 
-Licensing: personal and academic use is free under **Polyform Noncommercial 1.0.0**. **Commercial or for-profit use requires a paid license** — see [`LICENSES/COMMERCIAL.md`](LICENSES/COMMERCIAL.md).
+Licensing: personal and academic use is free under the MIT-based open-source terms. **Commercial or for-profit use requires a paid license** — see [`LICENSE`](LICENSE).
 
 ## Features
 - Entropy-tilted strategies (risk parity, momentum overlays)
@@ -62,6 +66,10 @@ Licensing: personal and academic use is free under **Polyform Noncommercial 1.0.
 PRs welcome for research workflows. Commercial users must obtain a license (see below). Please follow the existing CI workflows and keep strategy docs synced with ADRs.
 
 ## License
-- **Personal / academic:** Polyform Noncommercial 1.0.0 (see [`LICENSE`](LICENSE))
-- **Commercial / for-profit:** Contact for a paid license (see [`LICENSES/COMMERCIAL.md`](LICENSES/COMMERCIAL.md))
-- SPDX header recommendation: `SPDX-License-Identifier: Polyform-Noncommercial-1.0.0`
+- **Personal / academic:** MIT License – Open-Source (Personal / Academic) (see [`LICENSE`](LICENSE))
+- **Commercial / for-profit:** Purchase a Commercial License at https://entropylab.co/pricing or email derekalexanderespinoza@gmail.com
+- SPDX header recommendation: `SPDX-License-Identifier: MIT`
+
+## Commercial Use
+See [LICENSE](LICENSE).  
+Pro upgrade removes watermark & adds live-broker plugins.
