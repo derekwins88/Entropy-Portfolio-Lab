@@ -1,75 +1,134 @@
-# EntropyLab ⚡  
-Turn market chaos into backtests in 13 seconds.  
-`pip install entropylab` → [Get Pro](https://entropylab.co)
+# Entropy Portfolio Lab
 
-<!-- (Keep your existing README content below this line) -->
+A reproducible research workspace for analyzing **risk, invariants, and economic integrity**
+across software systems and markets.
 
-<!-- ===== Project Badges ===== -->
-[![python-ci](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml/badge.svg?branch=main)](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-python.yml)
-[![ci-ui](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-ui.yml/badge.svg?branch=main)](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-ui.yml)
-[![proof](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-proof.yml/badge.svg?branch=main)](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/ci-proof.yml)
-[![docs-diagrams](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/docs-diagrams.yml/badge.svg?branch=main)](https://github.com/derekwins88/Entropy-Portfolio-Lab/actions/workflows/docs-diagrams.yml)
+This repository prioritizes **evidence-locked experimentation**, ethical scope control,
+and low-noise validation over exploit development.
 
-![Python 3.11](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
-![Node 20](https://img.shields.io/badge/Node-20-339933?logo=node.js&logoColor=white)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](.github/CONTRIBUTING.md)
-[![Last commit](https://img.shields.io/github/last-commit/derekwins88/Entropy-Portfolio-Lab.svg)](https://github.com/derekwins88/Entropy-Portfolio-Lab/commits/main)
+---
 
-> A unified, research-to-execution sandbox for **entropy-aware portfolio trading**.
+## 🎯 Purpose
 
-Licensing: personal and academic use is free under the MIT-based open-source terms. **Commercial or for-profit use requires a paid license** — see [`LICENSE`](LICENSE).
+Entropy Portfolio Lab exists to:
+- Study how systems behave under **entropy, edge cases, and adversarial conditions**
+- Validate hypotheses using **local sandboxes and reproducible harnesses**
+- Produce **submission-grade artifacts** suitable for audits, bug bounties, and research disclosure
+- Avoid harm: no live exploitation, no unauthorized probing, no user impact
 
-## Features
-- Entropy-tilted strategies (risk parity, momentum overlays)
-- Python 3.11 backtester + C#/NinjaTrader execution components
-- Reproducible pipelines, diagrams, and ADRs
-- MIT-compatible examples kept separate from protected IP
+This is a *lab*, not a weapon.
 
-## Repo Map
+---
 
+## 🧠 Core Principles
+
+- **Golden Rule First**  
+  Do unto systems and users as you would want done unto yours.
+
+- **Invariant-Driven Analysis**  
+  Every investigation begins with: *“What must always hold?”*
+
+- **Repro > Theory**  
+  Claims are supported by deterministic tests, not intuition alone.
+
+- **Early Kill Switch**  
+  If a hypothesis collapses under scrutiny, it is discarded immediately.
+
+- **Explicit Scope & Permission**  
+  Only authorized programs, local forks, or owned systems are analyzed.
+
+---
+
+## 🧰 Repository Structure
+
+```text
+Entropy-Portfolio-Lab/
+├─ repro-harness/        # One-command reproducible test harness
+│  ├─ repro.sh
+│  ├─ repro/
+│  ├─ tests/
+│  └─ artifacts/
+├─ research/             # Writeups, notes, and structured findings
+├─ sandbox/              # Local-only environments and chain sandboxes
+├─ tools/                # Lightweight helpers (diffs, scanners, scripts)
+├─ docs/                 # Methodology, ethics, and process notes
+└─ README.md
 ```
-/lab                # python backtester + strategy sandbox
-/data               # sample or user-provided market data
-/strategies         # domain specs + notebooks (legacy)
-/metrics            # evaluation helpers
-/ui                 # Vite-based UI + Playwright smoke tests
-/csharp             # NinjaTrader components
-/docs               # specs, ADRs, diagrams
-.github/workflows   # CI for research, UI, docs, proofs
+
+---
+
+## ▶️ Quick Start (Repro Harness)
+
+```bash
+cd repro-harness
+cp .env.example .env
+./repro.sh
 ```
 
-## Quickstart
-1. `python -m venv .venv && source .venv/bin/activate`
-2. `pip install -r requirements.txt`
-3. `python -m lab.run --config configs/etrp.yml`
-4. Inspect `runs/<timestamp>/` for weights, returns, and plots
+- Produces deterministic PASS/FAIL output
+- Logs evidence to artifacts/evidence.jsonl
+- Safe for local and authorized testing only
 
-## Strategy: Entropy-Tilted Risk Parity
-- Universe: SPY, QQQ, IWM, EFA, EEM, TLT, IEF, LQD, GLD, SHY
-- Base: inverse 63-day volatility, monthly rebalance, 30% weight cap
-- Entropy tilt: Shannon entropy (63-day, 20 bins) rescaled 0–1 over 3 years
-- Regime overlay: shift 50% weight into IEF/TLT/SHY when vol/entropy spike
-- Risk target: 10% annualized volatility with turnover cap at 50%
-- See [ADR 0001](docs/adr/0001-entropy-tilted-risk-parity.md) for details
+---
 
-## Results (sample)
-- Metrics: CAGR, annualized stdev, Sharpe, max drawdown, turnover, hit rate
-- Plots: equity curve, rolling Sharpe, entropy vs. allocation (generated by runner)
+## 🧪 What This Repo Is (and Is Not)
 
-## Roadmap
-- [ ] Add momentum overlay to ETRP
-- [ ] Multi-regime classifier for entropy/volatility clustering
-- [ ] Live paper-trading bridge
+This repo is:
+- A research and validation lab
+- A place to close semantic gaps before submission
+- A record of disciplined inquiry
 
-## Contributing
-PRs welcome for research workflows. Commercial users must obtain a license (see below). Please follow the existing CI workflows and keep strategy docs synced with ADRs.
+This repo is NOT:
+- A live attack toolkit
+- A scanning framework for unauthorized targets
+- A place for zero-day hoarding or exploitation
 
-## License
-- **Personal / academic:** MIT License – Open-Source (Personal / Academic) (see [`LICENSE`](LICENSE))
-- **Commercial / for-profit:** Purchase a Commercial License at https://entropylab.co/pricing or email derekalexanderespinoza@gmail.com
-- SPDX header recommendation: `SPDX-License-Identifier: MIT`
+---
 
-## Commercial Use
-See [LICENSE](LICENSE).  
-Pro upgrade removes watermark & adds live-broker plugins.
+## ⚖️ Ethics & Safety
+
+All work in this repository follows:
+- Program scope rules
+- Local-only testing unless explicitly permitted
+- No interaction with real users or production funds
+- Full disclosure intent
+
+If you do not have permission, do not run the test.
+
+---
+
+## 📄 License
+
+MIT (research and tooling only; responsibility remains with the user).
+
+---
+
+## 🤝 Collaboration
+
+Pull requests are welcome if they:
+- Improve reproducibility
+- Reduce false positives
+- Strengthen safety guarantees
+
+Every PR must include a clear scope statement and repro evidence.
+
+---
+
+## 📚 Foundations
+
+### Mathematical Notes
+
+This repository uses mathematics to reason about invariants, discrete arithmetic,
+and boundary behavior in real systems. Emphasis is placed on correctness under
+finite precision, composition, and adversarial inputs rather than idealized models.
+
+See `docs/MATHEMATICS.md` for details.
+
+### 2025 Transitional Marker
+
+Note: The repository includes a 2025 transitional marker documenting an in-progress
+research phase where multiple lines of inquiry were explored but not yet finalized.
+
+---
+
+Entropy is inevitable. Integrity is a choice.
