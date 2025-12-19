@@ -25,11 +25,19 @@
 ## 🧭 Risk/Dup Check
 - Duplicate Risk: [Low/Med/High + why.]
 
-## ⚡ Quick Repro
-- [One-liner command to validate.]
+## ⚡ Quick Matrix Check (Optional Self-Review)
+- Class: [E.g., Stale Accrual / Share Inflation / Arithmetic / Config]
+- Duplicate Risk: [Low/Med/High + quick note, e.g., "Known pattern but new value flow"]
+- Mitigation Cost: [One-line / Reorder / Economic / New Mech]
+- Stop? [Yes/No + why if Yes]
 
-## ✅ Ethical Affirmation
-- [ ] I confirm no unauthorized access.
+## 🛡️ Ethics Checkbox
+- [ ] Explicit permission / local-only / authorized scope
+- [ ] No user/production impact
+- [ ] Disclosure intent confirmed
+
+## 🔗 Quick Repro (One-Liner)
+- Command: `./repro.sh --test stale_accrual` (or equivalent)
 
 ## 🧪 Variant Exploration
 - Related Variants: [E.g., overflow paths, boundary cases, alternative triggers.]
